@@ -475,6 +475,7 @@ function sincronizar(foto) {
     sala.cartel.element.querySelector('span').textContent = n === 0 ? 'sin nadie' : n === 1 ? '1 trabajando' : `${n} trabajando`;
   }
   primeraFoto = false;
+  revisarClaude();
   pintarPanel();
 }
 
@@ -688,7 +689,8 @@ function pintarPanel() {
   etiquetaYo.element.textContent = esperan.length ? `Tú · ${esperan.length} te ${esperan.length === 1 ? 'busca' : 'buscan'}` : 'Tú';
   anillo.visible = esperan.length > 0;
 
-  let html = '';
+  pintarPuntos();
+  let html = htmlConectados();
   if (esperan.length) {
     html += `<div class="grupo esperan"><h3>Te esperan</h3>${esperan.map((s) => personas.get(quienVisita(s)) || personas.get(s.id)).filter(Boolean).map(fila).join('')}</div>`;
   }
@@ -890,11 +892,12 @@ function sincronizarJugadores(lista) {
       const c = crearPersona(COLORES[hash(j.nombre) % COLORES.length], { semillaId: j.nombre });
       c.g.position.set(j.x, j.y, j.z);
       c.g.rotation.y = j.ry;
-      const e = etiqueta('etiqueta-yo', esc(j.nombre));
+      const e = etiqueta('etiqueta-yo', `<i></i>${esc(j.nombre)}`);
       e.position.y = 1.95;
+      e.element.dataset.claude = claudeDe(j.nombre);
       c.g.add(e);
       scene.add(c.g);
-      o = { c };
+      o = { c, e };
       otros.set(k, o);
     }
     o.meta = j;
@@ -1156,6 +1159,75 @@ function hablarConCercano() {
   if (s.espera && (quienVisita(s) === cercano.id || (s.espera.tipo === 'mensaje' && !cercano.ayudante))) abrirTarjeta(cercano);
 }
 
+// ---------- conectados: quien tiene la pagina abierta y si su Claude trabaja ----------
+const avisos = document.getElementById('avisos');
+const AVISO_MS = 4500;
+let enPagina = null; // nombres con la pagina abierta (sin ti); null hasta la primera lista, que no avisa
+let claudeAntes = null; // nombre -> estado de su Claude en la foto anterior
+const CLAUDE = { trabajando: 'Claude trabajando', espera: 'Claude en espera', apagado: 'Sin Claude' };
+const nombreDueno = (s) => s.dueno || 'Anfitrión'; // el anfitrion sin OFICINA_NOMBRE se llama asi tambien en /eventos
+
+function claudeDe(nombre) {
+  const despiertas = fotoActual.sesiones.filter((s) => nombreDueno(s) === nombre && !s.dormido);
+  if (!despiertas.length) return 'apagado';
+  return despiertas.some((s) => s.estado !== 'listo' || s.agentes.some((a) => !a.terminado)) ? 'trabajando' : 'espera';
+}
+
+function avisar(texto, color) {
+  const div = document.createElement('div');
+  div.className = 'avisito';
+  div.innerHTML = `<i style="background:${color}"></i>${esc(texto)}`;
+  avisos.append(div);
+  setTimeout(() => div.remove(), AVISO_MS);
+}
+
+function recibirConectados(nombres) {
+  const ahora = new Set(nombres.filter((n) => n !== miNombre));
+  if (enPagina) {
+    for (const n of ahora) if (!enPagina.has(n)) avisar(`${n} se conectó`, '#4fcf73');
+    for (const n of enPagina) if (!ahora.has(n)) avisar(`${n} se desconectó`, '#e05555');
+  }
+  enPagina = ahora;
+  pintarPanel();
+}
+
+// Avisa cuando el Claude de un amigo pasa de apagado a encendido o al reves (no por cada herramienta).
+function revisarClaude() {
+  const ahora = new Map([...new Set(fotoActual.sesiones.map(nombreDueno))].map((n) => [n, claudeDe(n)]));
+  if (claudeAntes) {
+    for (const n of new Set([...ahora.keys(), ...claudeAntes.keys()])) {
+      if (n === miNombre) continue;
+      const antes = (claudeAntes.get(n) || 'apagado') !== 'apagado';
+      const despues = (ahora.get(n) || 'apagado') !== 'apagado';
+      if (!antes && despues) avisar(`${n} empezó a usar Claude`, '#4fa8ff');
+      if (antes && !despues) avisar(`${n} dejó de usar Claude`, '#c3ccd6');
+    }
+  }
+  claudeAntes = ahora;
+}
+
+function pintarPuntos() {
+  for (const o of otros.values()) o.e.element.dataset.claude = claudeDe(o.meta.nombre);
+}
+
+// Solo con amigos: estando solo, el panel queda como siempre.
+function htmlConectados() {
+  const amigos = new Set([...(enPagina || []), ...fotoActual.sesiones.map(nombreDueno)]);
+  amigos.delete(miNombre);
+  if (!amigos.size) return '';
+  const fila = (nombre, titulo, pagina) => {
+    const claude = claudeDe(nombre);
+    return `<div class="persona" data-claude="${claude}">
+      <span class="dot${pagina ? ' si' : ''}" title="${pagina ? 'Con la oficina abierta' : 'Sin la oficina abierta'}"></span>
+      <b>${esc(titulo)}</b>
+      <span>${pagina ? 'En la oficina' : 'Fuera'} · <em>${CLAUDE[claude]}</em></span>
+    </div>`;
+  };
+  const enLinea = (n) => Boolean(enPagina && enPagina.has(n));
+  const orden = [...amigos].sort((a, b) => enLinea(b) - enLinea(a) || a.localeCompare(b));
+  return `<div class="grupo conectados"><h3>Conectados</h3>${fila(miNombre, 'Tú', true)}${orden.map((n) => fila(n, n, enLinea(n))).join('')}</div>`;
+}
+
 // ---------- datos en vivo ----------
 function conectar() {
   const fuente = new EventSource('/eventos');
@@ -1166,6 +1238,7 @@ function conectar() {
   fuente.onmessage = (m) => sincronizar(JSON.parse(m.data));
   fuente.addEventListener('jugadores', (m) => sincronizarJugadores(JSON.parse(m.data)));
   fuente.addEventListener('chat', (m) => recibirChat(JSON.parse(m.data)));
+  fuente.addEventListener('conectados', (m) => recibirConectados(JSON.parse(m.data)));
   fuente.addEventListener('yo', (m) => {
     miNombre = JSON.parse(m.data);
     if (fotoActual.sesiones.length) sincronizar(fotoActual);

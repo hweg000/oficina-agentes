@@ -59,6 +59,13 @@ function nombreDeVisita(req) {
   return CORREOS.get(correo) || correo.split('@')[0];
 }
 
+// Quien tiene la pagina abierta, contado por su conexion: no se va aunque cambie de pestaña (ahi deja de mandar su posicion).
+const conectados = new Map(); // res -> nombre
+function emitirConectados() {
+  const datos = `event: conectados\ndata: ${JSON.stringify([...new Set(conectados.values())].filter(Boolean))}\n\n`;
+  for (const res of clientes.keys()) res.write(datos);
+}
+
 // Chat: los ultimos mensajes se le mandan a quien llega.
 const chat = [];
 function mandarChat(m) {
@@ -131,12 +138,19 @@ const server = http.createServer((req, res) => {
   if (url === '/eventos') {
     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
     const f = foto(oficina);
-    res.write(`event: yo\ndata: ${JSON.stringify(nombreDeVisita(req))}\n\n`);
+    const nombre = nombreDeVisita(req);
+    res.write(`event: yo\ndata: ${JSON.stringify(nombre)}\n\n`);
     res.write(`event: chat\ndata: ${JSON.stringify(chat)}\n\n`);
     res.write(`data: ${JSON.stringify(remoto ? publica(f) : f)}\n\n`);
     clientes.set(res, remoto);
+    conectados.set(res, nombre);
     emitirJugadores();
-    req.on('close', () => clientes.delete(res));
+    emitirConectados();
+    req.on('close', () => {
+      clientes.delete(res);
+      conectados.delete(res);
+      emitirConectados();
+    });
     return;
   }
 
