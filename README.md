@@ -1,5 +1,7 @@
 # Oficina de agentes
 
+![Oficina de agentes: la sala de un proyecto con Claude editando, el panel de conectados y el chat](docs/captura.png)
+
 Una oficina 3D low poly, en vivo, de lo que hacen tus sesiones de Claude Code y
 sus agentes en **todos** tus proyectos:
 
