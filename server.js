@@ -8,10 +8,11 @@ const path = require('path');
 const { crearOficina, aplicar, foto, publica } = require('./estado');
 
 const PUERTO = Number(process.env.OFICINA_PORT) || 3950;
-// Modo barrio: OFICINA_TOKENS="Ana:token1,Beto:token2" deja que cada amigo mande sus eventos por el tunel.
-const TOKENS = new Map(
-  (process.env.OFICINA_TOKENS || '').split(',').filter((x) => x.includes(':')).map((x) => x.trim().split(':').reverse())
-);
+// Modo barrio: OFICINA_TOKENS="Ana:token1:ana@correo.com,Beto:token2" deja que cada amigo mande sus eventos por
+// el tunel. El correo (opcional) es con el que entra por Access: asi su muneco lleva el mismo nombre que sus salas.
+const AMIGOS = (process.env.OFICINA_TOKENS || '').split(',').map((x) => x.trim().split(':')).filter((x) => x.length >= 2);
+const TOKENS = new Map(AMIGOS.map(([nombre, token]) => [token, nombre]));
+const CORREOS = new Map(AMIGOS.filter((x) => x[2]).map(([nombre, , correo]) => [correo.toLowerCase(), nombre]));
 const NOMBRE = process.env.OFICINA_NOMBRE || ''; // para que tus propias salas tambien lleven tu nombre
 // Lo que entra por Cloudflare Tunnel trae este header; lo local (tus hooks, tu navegador) no.
 const esRemoto = (req) => Boolean(req.headers['cf-connecting-ip']);
@@ -36,6 +37,50 @@ function emitir() {
   }, 80);
 }
 setInterval(emitir, 5000); // para que "dormido" y las despedidas avancen sin eventos nuevos
+
+// Avatares de quienes tienen la pagina abierta. Van por su propio evento SSE para no reenviar toda la oficina en cada paso.
+const jugadores = new Map(); // `${nombre}:${id}` -> { id, nombre, x, y, z, ry, ultimo }
+const JUGADOR_MS = 10000; // sin noticias en este tiempo, cerro la pagina
+let pendienteJugadores = null;
+function emitirJugadores() {
+  if (pendienteJugadores) return;
+  pendienteJugadores = setTimeout(() => {
+    pendienteJugadores = null;
+    for (const [k, j] of jugadores) if (Date.now() - j.ultimo > JUGADOR_MS) jugadores.delete(k);
+    const datos = `event: jugadores\ndata: ${JSON.stringify([...jugadores.values()].map(({ ultimo, ...j }) => j))}\n\n`;
+    for (const res of clientes.keys()) res.write(datos);
+  }, 100);
+}
+setInterval(emitirJugadores, 3000);
+// Desde el tunel, Cloudflare Access pone el correo de quien entro; de ahi sale su nombre y no se puede inventar.
+function nombreDeVisita(req) {
+  if (!esRemoto(req)) return NOMBRE || 'Anfitrión';
+  const correo = String(req.headers['cf-access-authenticated-user-email'] || '').toLowerCase();
+  return CORREOS.get(correo) || correo.split('@')[0];
+}
+
+// Chat: los ultimos mensajes se le mandan a quien llega.
+const chat = [];
+function mandarChat(m) {
+  chat.push(m);
+  if (chat.length > 30) chat.shift();
+  const datos = `event: chat\ndata: ${JSON.stringify([m])}\n\n`;
+  for (const res of clientes.keys()) res.write(datos);
+}
+
+function leerJson(req, res, max, usar) {
+  let cuerpo = '';
+  req.on('data', (c) => {
+    cuerpo += c;
+    if (cuerpo.length > max) req.destroy();
+  });
+  req.on('end', () => {
+    try {
+      usar(JSON.parse(cuerpo));
+    } catch {}
+    res.writeHead(204).end();
+  });
+}
 
 const server = http.createServer((req, res) => {
   const url = req.url.split('?')[0];
@@ -65,11 +110,32 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (req.method === 'POST' && (url === '/posicion' || url === '/chat')) {
+    const nombre = nombreDeVisita(req);
+    if (!nombre) return res.writeHead(403).end();
+    if (url === '/chat') {
+      return leerJson(req, res, 2000, ({ id, texto }) => {
+        texto = String(texto || '').trim().slice(0, 200);
+        if (texto) mandarChat({ id: String(id || '').slice(0, 40), nombre, texto, t: Date.now() });
+      });
+    }
+    return leerJson(req, res, 1000, ({ id, x, y, z, ry }) => {
+      const n = [x, y, z, ry].map(Number);
+      if (typeof id === 'string' && id.length <= 40 && n.every((v) => Number.isFinite(v) && Math.abs(v) < 500)) {
+        jugadores.set(`${nombre}:${id}`, { id, nombre, x: n[0], y: n[1], z: n[2], ry: n[3], ultimo: Date.now() });
+        emitirJugadores();
+      }
+    });
+  }
+
   if (url === '/eventos') {
     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
     const f = foto(oficina);
+    res.write(`event: yo\ndata: ${JSON.stringify(nombreDeVisita(req))}\n\n`);
+    res.write(`event: chat\ndata: ${JSON.stringify(chat)}\n\n`);
     res.write(`data: ${JSON.stringify(remoto ? publica(f) : f)}\n\n`);
     clientes.set(res, remoto);
+    emitirJugadores();
     req.on('close', () => clientes.delete(res));
     return;
   }

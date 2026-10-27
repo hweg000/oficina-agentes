@@ -130,7 +130,9 @@ function arbol(x, z, s) {
   g.scale.setScalar(s);
   g.rotation.y = azar() * 6;
   scene.add(g);
+  arboles.push(g);
 }
+const arboles = []; // se esconden los que quedan dentro de una sala
 for (let i = 0; i < 45; i++) {
   const a = azar() * Math.PI * 2;
   const r = 42 + azar() * 18;
@@ -221,6 +223,47 @@ anillo.position.y = 0.2;
 anillo.visible = false;
 scene.add(anillo);
 
+// CSS2DRenderer solo quita los divs del objeto que se quita, no los de sus hijos.
+function quitarDeEscena(obj) {
+  obj.removeFromParent();
+  obj.traverse((o) => o.isCSS2DObject && o.element.remove());
+}
+
+// ---------- barrios: un pedazo de isla por dueño ----------
+// Con un solo dueño todo queda alrededor de la plaza, como siempre; con varios, cada uno
+// tiene su barrio (su placita y sus salas) en un anillo alrededor de la plaza del centro.
+let barrios = new Map(); // dueno -> { x, z, adornos }
+function centroBarrio(k, n) {
+  if (n <= 1) return { x: 0, z: 0 };
+  const R = Math.max(28, 22 / Math.sin(Math.PI / n)); // shortcut: con mas de 5 dueños los barrios se salen de la isla
+  const a = (k / n) * Math.PI * 2;
+  return { x: Math.sin(a) * R, z: Math.cos(a) * R };
+}
+
+function armarBarrios(duenos) {
+  for (const p of [...personas.values()]) quitarPersona(p);
+  for (const sala of salas.values()) {
+    quitarDeEscena(sala.g);
+    quitarDeEscena(sala.cartel);
+  }
+  salas.clear();
+  pisos.length = 2; // isla y plaza
+  for (const b of barrios.values()) b.adornos.forEach(quitarDeEscena);
+  for (const a of arboles) a.visible = true;
+  barrios = new Map(duenos.map((d, k) => [d, { ...centroBarrio(k, duenos.length), adornos: [] }]));
+  if (duenos.length < 2) return;
+  for (const [dueno, b] of barrios) {
+    const placita = malla(new THREE.CylinderGeometry(4.2, 4.4, 0.06, 24), COLORES[hash(dueno) % COLORES.length], b.x, 0.03, b.z);
+    placita.material = placita.material.clone();
+    placita.material.transparent = true;
+    placita.material.opacity = 0.35;
+    const letrero = etiqueta('etiqueta-sala', `<b>Barrio de ${esc(dueno || 'anfitrión')}</b>`);
+    letrero.position.set(b.x, 1.2, b.z);
+    scene.add(placita, letrero);
+    b.adornos.push(placita, letrero);
+  }
+}
+
 // ---------- salas ----------
 const salas = new Map();
 
@@ -240,9 +283,14 @@ function planta(x, z) {
   return g;
 }
 
-function obtenerSala(nombre) {
+function obtenerSala(nombre, dueno) {
   if (salas.has(nombre)) return salas.get(nombre);
-  const { x, z, ang, r } = posicionSala(salas.size);
+  const centro = barrios.get(dueno) || { x: 0, z: 0 };
+  const pos = posicionSala([...salas.values()].filter((s) => s.dueno === dueno).length);
+  const { ang, r } = pos;
+  const x = centro.x + pos.x;
+  const z = centro.z + pos.z;
+  for (const a of arboles) if (Math.hypot(a.position.x - x, a.position.z - z) < 8) a.visible = false;
   const g = new THREE.Group();
   g.position.set(x, 0, z);
   g.rotation.y = ang + Math.PI; // +z local apunta a la plaza
@@ -298,7 +346,7 @@ function obtenerSala(nombre) {
     { grupo: fondo, eje: 'z', normal: new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), g.rotation.y), opacidad: 1 },
     { grupo: lado, eje: 'x', normal: new THREE.Vector3(-1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), g.rotation.y), opacidad: 1 },
   ];
-  const sala = { nombre, g, interior, ang, cartel, muros, puestos: Array(PUESTOS.length).fill(null), escritorios: [] };
+  const sala = { nombre, dueno, centro, g, interior, ang, cartel, muros, puestos: Array(PUESTOS.length).fill(null), escritorios: [] };
   salas.set(nombre, sala);
   return sala;
 }
@@ -355,7 +403,7 @@ function rutaSalida(p) {
 }
 
 function nuevaPersona(id, e) {
-  const sala = obtenerSala(e.sesion.proyecto);
+  const sala = obtenerSala(e.sesion.proyecto, e.sesion.dueno || '');
   const color = COLORES[hash(e.sesion.id) % COLORES.length];
   const cuerpo = crearPersona(color, { ayudante: e.ayudante, semillaId: id });
   scene.add(cuerpo.g);
@@ -379,7 +427,7 @@ function nuevaPersona(id, e) {
   } else {
     // Llega caminando desde la puerta.
     const [entrada, puerta] = rutaSalida(p);
-    p.g.position.copy(puerta).lerp(new THREE.Vector3(0, 0.18, 0), 0.25);
+    p.g.position.copy(puerta).lerp(new THREE.Vector3(sala.centro.x, 0.18, sala.centro.z), 0.25);
     p.ruta = [puerta, entrada, asiento];
     p.lugar = 'llegando';
   }
@@ -389,7 +437,7 @@ function nuevaPersona(id, e) {
 
 function quitarPersona(p) {
   if (p.puesto >= 0 && p.sala.puestos[p.puesto] === p.id) p.sala.puestos[p.puesto] = null;
-  scene.remove(p.g);
+  quitarDeEscena(p.g);
   personas.delete(p.id);
   if (seleccion === p.id) seleccion = null;
 }
@@ -401,6 +449,12 @@ function quienVisita(s) {
 
 function sincronizar(foto) {
   fotoActual = foto;
+  // Si llega o se va un dueño, se rehace el reparto de barrios (los agentes reaparecen en su escritorio).
+  const duenos = [...new Set(foto.sesiones.map((s) => s.dueno || ''))].sort();
+  if (duenos.join('\n') !== [...barrios.keys()].join('\n')) {
+    armarBarrios(duenos);
+    primeraFoto = true;
+  }
   const vivos = new Set();
   for (const s of foto.sesiones) {
     const entradas = [{ id: s.id, datos: s, ayudante: false, sesion: s }, ...s.agentes.map((a) => ({ id: `${s.id}/${a.id}`, datos: a, ayudante: true, sesion: s }))];
@@ -410,7 +464,7 @@ function sincronizar(foto) {
       const p = personas.get(e.id) || nuevaPersona(e.id, e);
       p.datos = e.datos;
       p.sesion = s;
-      p.quiereVisitar = e.id === visita;
+      p.pideVisita = e.id === visita;
     }
   }
   for (const p of [...personas.values()]) if (!vivos.has(p.id)) quitarPersona(p);
@@ -424,15 +478,33 @@ function sincronizar(foto) {
   pintarPanel();
 }
 
-// Quien te busca se para alrededor de tu avatar, del lado de su sala; si te mueves, te sigue.
+// Cada agente busca a su dueño: tu avatar si la sesion es tuya, el muñeco del amigo si es suya.
+// Si su dueño no tiene la pagina abierta, se queda en su escritorio.
+let miNombre = null;
+const esMia = (s) => !s.dueno || s.dueno === miNombre;
+function anfitrionDe(s) {
+  if (esMia(s)) return yo.g;
+  for (const o of otros.values()) if (o.meta.nombre === s.dueno) return o.c.g;
+  return null;
+}
+
+// Quien busca a alguien se para alrededor de su avatar, del lado de su sala; si se mueve, lo sigue.
 function ubicarVisitantes() {
-  const visitantes = [...personas.values()].filter((p) => p.quiereVisitar);
-  visitantes.forEach((p, j) => {
-    const haciaSala = Math.atan2(p.sala.g.position.x - yo.g.position.x, p.sala.g.position.z - yo.g.position.z);
-    const a = haciaSala + (j - (visitantes.length - 1) / 2) * 0.6;
-    p.lugarVisita = new THREE.Vector3(yo.g.position.x + Math.sin(a) * 1.6, yo.g.position.y, yo.g.position.z + Math.cos(a) * 1.6);
-    if (p.lugar === 'yendo' && p.ruta.length) p.ruta[p.ruta.length - 1] = p.lugarVisita.clone();
-  });
+  const porAnfitrion = new Map();
+  for (const p of personas.values()) {
+    p.anfitrion = p.pideVisita ? anfitrionDe(p.sesion) : null;
+    p.quiereVisitar = Boolean(p.anfitrion);
+    if (p.anfitrion) porAnfitrion.set(p.anfitrion, [...(porAnfitrion.get(p.anfitrion) || []), p]);
+  }
+  for (const [anfitrion, visitantes] of porAnfitrion) {
+    const pos = anfitrion.position;
+    visitantes.forEach((p, j) => {
+      const haciaSala = Math.atan2(p.sala.g.position.x - pos.x, p.sala.g.position.z - pos.z);
+      const a = haciaSala + (j - (visitantes.length - 1) / 2) * 0.6;
+      p.lugarVisita = new THREE.Vector3(pos.x + Math.sin(a) * 1.6, pos.y, pos.z + Math.cos(a) * 1.6);
+      if (p.lugar === 'yendo' && p.ruta.length) p.ruta[p.ruta.length - 1] = p.lugarVisita.clone();
+    });
+  }
 }
 
 // ---------- animacion ----------
@@ -504,8 +576,8 @@ function animarPersona(p, t, dt) {
     let dif = p.sala.g.rotation.y - p.g.rotation.y;
     dif = Math.atan2(Math.sin(dif), Math.cos(dif));
     p.g.rotation.y += dif * Math.min(1, dt * 6);
-  } else if (p.lugar === 'visita') {
-    const rumbo = Math.atan2(yo.g.position.x - p.g.position.x, yo.g.position.z - p.g.position.z);
+  } else if (p.lugar === 'visita' && p.anfitrion) {
+    const rumbo = Math.atan2(p.anfitrion.position.x - p.g.position.x, p.anfitrion.position.z - p.g.position.z);
     let dif = rumbo - p.g.rotation.y;
     dif = Math.atan2(Math.sin(dif), Math.cos(dif));
     p.g.rotation.y += dif * Math.min(1, dt * 6);
@@ -609,7 +681,7 @@ function fila(p) {
 function pintarPanel() {
   const sesiones = fotoActual.sesiones;
   vacio.classList.toggle('si', sesiones.length === 0);
-  const esperan = sesiones.filter((s) => quienVisita(s));
+  const esperan = sesiones.filter((s) => quienVisita(s) && esMia(s));
   aviso.classList.toggle('si', esperan.length > 0);
   aviso.textContent = esperan.length === 1 ? '1 agente te espera' : `${esperan.length} agentes te esperan`;
   etiquetaYo.element.classList.toggle('llaman', esperan.length > 0);
@@ -785,10 +857,7 @@ function moverYo(t, dt) {
     }
   }
   if (modo !== 'iso') caminando = moverConTeclas(dt) || caminando;
-  const s = Math.sin(t * 11);
-  yo.piernas[0].rotation.x = caminando ? s * 0.6 : suave(yo.piernas[0].rotation.x, 0, dt);
-  yo.piernas[1].rotation.x = caminando ? -s * 0.6 : suave(yo.piernas[1].rotation.x, 0, dt);
-  yo.brazos[0].rotation.x = caminando ? -s * 0.5 : suave(yo.brazos[0].rotation.x, -0.1, dt);
+  pasos(yo, caminando, t, dt);
   anillo.position.x = yo.g.position.x;
   anillo.position.z = yo.g.position.z;
   anillo.position.y = yo.g.position.y + 0.03;
@@ -798,6 +867,115 @@ function moverYo(t, dt) {
     marca.scale.setScalar(1 + (1 - marca.userData.vida) * 0.8);
   }
   return caminando;
+}
+
+function pasos(c, caminando, t, dt) {
+  const s = Math.sin(t * 11);
+  c.piernas[0].rotation.x = caminando ? s * 0.6 : suave(c.piernas[0].rotation.x, 0, dt);
+  c.piernas[1].rotation.x = caminando ? -s * 0.6 : suave(c.piernas[1].rotation.x, 0, dt);
+  c.brazos[0].rotation.x = caminando ? -s * 0.5 : suave(c.brazos[0].rotation.x, -0.1, dt);
+}
+
+// ---------- otros visitantes (multijugador) ----------
+const miId = Math.random().toString(36).slice(2, 12);
+const otros = new Map(); // `${nombre}:${id}` -> { c, meta }
+function sincronizarJugadores(lista) {
+  const vivos = new Set();
+  for (const j of lista) {
+    if (j.id === miId) continue;
+    const k = `${j.nombre}:${j.id}`;
+    vivos.add(k);
+    let o = otros.get(k);
+    if (!o) {
+      const c = crearPersona(COLORES[hash(j.nombre) % COLORES.length], { semillaId: j.nombre });
+      c.g.position.set(j.x, j.y, j.z);
+      c.g.rotation.y = j.ry;
+      const e = etiqueta('etiqueta-yo', esc(j.nombre));
+      e.position.y = 1.95;
+      c.g.add(e);
+      scene.add(c.g);
+      o = { c };
+      otros.set(k, o);
+    }
+    o.meta = j;
+  }
+  for (const [k, o] of otros) {
+    if (vivos.has(k)) continue;
+    quitarDeEscena(o.c.g);
+    otros.delete(k);
+  }
+}
+
+function moverOtros(t, dt) {
+  for (const { c, meta } of otros.values()) {
+    const d = Math.hypot(meta.x - c.g.position.x, meta.z - c.g.position.z);
+    // Llega una posicion cada ~200 ms: avanza hacia ella a paso de caminar, o salta si quedo muy lejos.
+    if (d > 8) c.g.position.set(meta.x, meta.y, meta.z);
+    c.g.position.x = suave(c.g.position.x, meta.x, dt, 6);
+    c.g.position.z = suave(c.g.position.z, meta.z, dt, 6);
+    c.g.position.y = suave(c.g.position.y, meta.y, dt, 10);
+    let dif = meta.ry - c.g.rotation.y;
+    dif = Math.atan2(Math.sin(dif), Math.cos(dif));
+    c.g.rotation.y += dif * Math.min(1, dt * 10);
+    pasos(c, d > 0.05, t, dt);
+  }
+}
+
+// ---------- chat ----------
+const formChat = document.getElementById('chat');
+const mensajes = document.getElementById('mensajes');
+const escribir = document.getElementById('escribir');
+const DICE_MS = 6000;
+function decir(c, texto) {
+  if (!c.dice) {
+    c.dice = etiqueta('dice');
+    c.dice.position.y = 2.5;
+    c.g.add(c.dice);
+  }
+  c.dice.element.textContent = texto;
+  c.diceHasta = Date.now() + DICE_MS;
+}
+function recibirChat(lista) {
+  for (const m of lista) {
+    const li = document.createElement('li');
+    li.innerHTML = `<b style="color:${m.id === miId ? '#c27a00' : COLORES[hash(m.nombre) % COLORES.length]}">${esc(m.nombre)}</b>${esc(m.texto)}`;
+    mensajes.append(li);
+    if (Date.now() - m.t > DICE_MS) continue; // historial: solo en la lista
+    const o = m.id === miId ? { c: yo } : otros.get(`${m.nombre}:${m.id}`);
+    if (o) decir(o.c, m.texto);
+  }
+  while (mensajes.children.length > 30) mensajes.firstChild.remove();
+  mensajes.scrollTop = mensajes.scrollHeight;
+}
+function globos() {
+  const ahora = Date.now();
+  for (const c of [yo, ...[...otros.values()].map((o) => o.c)]) if (c.dice) c.dice.visible = c.g.visible && ahora < c.diceHasta;
+}
+formChat.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const texto = escribir.value.trim();
+  if (texto) fetch('/chat', { method: 'POST', body: JSON.stringify({ id: miId, texto }) }).catch(() => {});
+  escribir.value = '';
+  escribir.blur(); // de vuelta a caminar con el teclado
+});
+addEventListener('keydown', (e) => {
+  if (e.code !== 'Enter' || e.target === escribir) return;
+  if (document.pointerLockElement) document.exitPointerLock();
+  escribir.focus();
+  e.preventDefault();
+});
+
+// Manda tu posicion ~5 veces por segundo mientras te mueves, y cada 3 s quieto (para no desaparecer).
+let ultimaPos = '';
+let ultimoEnvio = 0;
+function mandarPosicion(t) {
+  const { x, y, z } = yo.g.position;
+  const pos = [x, y, z, yo.g.rotation.y].map((v) => v.toFixed(2)).join(',');
+  if (t - ultimoEnvio < (pos === ultimaPos ? 3 : 0.2)) return;
+  ultimaPos = pos;
+  ultimoEnvio = t;
+  const [px, py, pz, ry] = pos.split(',').map(Number);
+  fetch('/posicion', { method: 'POST', body: JSON.stringify({ id: miId, x: px, y: py, z: pz, ry }) }).catch(() => {});
 }
 
 // ---------- vistas: isometrica, tercera y primera persona ----------
@@ -982,6 +1160,12 @@ function conectar() {
     conexion.textContent = 'En vivo';
   };
   fuente.onmessage = (m) => sincronizar(JSON.parse(m.data));
+  fuente.addEventListener('jugadores', (m) => sincronizarJugadores(JSON.parse(m.data)));
+  fuente.addEventListener('chat', (m) => recibirChat(JSON.parse(m.data)));
+  fuente.addEventListener('yo', (m) => {
+    miNombre = JSON.parse(m.data);
+    if (fotoActual.sesiones.length) sincronizar(fotoActual);
+  });
   fuente.onerror = () => {
     conexion.classList.remove('ok');
     conexion.textContent = 'Sin conexión';
@@ -1001,6 +1185,9 @@ function cuadro() {
   acumulado = 0;
   const t = reloj.elapsedTime;
   const yoCamina = moverYo(t, dt);
+  mandarPosicion(t);
+  moverOtros(t, dt);
+  globos();
   ubicarVisitantes();
   for (const p of personas.values()) animarPersona(p, t, dt);
 

@@ -108,11 +108,13 @@ de todos, con el nombre de cada quien en sus salas.
 1. En la máquina del barrio, un token por amigo (inventa cadenas largas al azar):
 
    ```
-   OFICINA_TOKENS="Ana:token-de-ana,Beto:token-de-beto" OFICINA_NOMBRE=Leo npm start
+   OFICINA_TOKENS="Ana:token-de-ana:ana@correo.com,Beto:token-de-beto:beto@correo.com" OFICINA_NOMBRE=Leo npm start
    ```
 
-   `OFICINA_NOMBRE` es para que tus propias salas (las de tus hooks locales)
-   también lleven tu nombre.
+   El correo es con el que cada quien entra por Access: así su muñeco lleva el
+   mismo nombre que sus salas. `OFICINA_NOMBRE` es tu nombre (tus hooks locales
+   y tu muñeco cuando abres `localhost`). En PowerShell las variables se ponen
+   antes: `$env:OFICINA_TOKENS = "..."`, `$env:OFICINA_NOMBRE = "Leo"`, luego `npm start`.
 
 2. En Cloudflare Zero Trust → Access, protege el subdominio con una política
    **Allow** con los correos de tus amigos, y agrega otra aplicación para la ruta
@@ -128,6 +130,13 @@ de todos, con el nombre de cada quien en sus salas.
 Lo que entra por el túnel (trae el header `cf-connecting-ip`) se trata como de
 fuera: `/evento` exige token, `/crudo` no existe, y `/eventos` y `/estado` llegan
 sin rutas, comandos, textos de permisos ni bitácora.
+
+Quien tenga la página abierta aparece como un muñeco con su nombre y los demás
+lo ven caminar. Cada dueño tiene su barrio (su placita y sus salas) alrededor de
+la plaza del centro; con un solo dueño todo queda como siempre. Cuando un agente
+pide permiso, camina hasta el muñeco de **su** dueño (si no tiene la página
+abierta, se queda en su escritorio). **Enter** abre el chat: los mensajes salen
+en la lista y como globo sobre quien habla.
 
 Ojo: el hook manda el evento **completo** (rutas, comandos, lo que se leyó o
 escribió) a la máquina del barrio. Ahí no se guarda, pero quien la corre lo

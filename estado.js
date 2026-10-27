@@ -41,6 +41,7 @@ function obtenerSesion(of, ev, ahora) {
     s = {
       id: ev.session_id,
       cwd,
+      dueno: ev.dueno || '',
       proyecto: ev.dueno ? `${ev.dueno} · ${proyecto}` : proyecto,
       estado: 'listo',
       detalle: '',
@@ -172,6 +173,7 @@ function foto(of, ahora = Date.now()) {
     }
     sesiones.push({
       id: s.id,
+      dueno: s.dueno,
       proyecto: s.proyecto,
       cwd: s.cwd,
       estado: s.estado,
