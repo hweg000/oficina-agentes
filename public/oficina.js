@@ -665,7 +665,7 @@ const conexion = document.getElementById('conexion');
 
 function nombreDe(p) {
   if (!p) return '';
-  return p.ayudante ? p.datos.descripcion || p.datos.tipo : `Claude · ${p.sesion.id.slice(0, 4)}`;
+  return p.ayudante ? p.datos.descripcion || p.datos.tipo : `Claude · ${p.sesion.id.split(':').pop().slice(0, 4)}`;
 }
 
 function fila(p) {
@@ -935,8 +935,12 @@ function decir(c, texto) {
   c.dice.element.textContent = texto;
   c.diceHasta = Date.now() + DICE_MS;
 }
+const vistos = new Set(); // al reconectar, el servidor reenvia el historial
 function recibirChat(lista) {
   for (const m of lista) {
+    const clave = `${m.t}:${m.nombre}:${m.id}`;
+    if (vistos.has(clave)) continue;
+    vistos.add(clave);
     const li = document.createElement('li');
     li.innerHTML = `<b style="color:${m.id === miId ? '#c27a00' : COLORES[hash(m.nombre) % COLORES.length]}">${esc(m.nombre)}</b>${esc(m.texto)}`;
     mensajes.append(li);

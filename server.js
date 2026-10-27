@@ -148,8 +148,12 @@ const server = http.createServer((req, res) => {
 
   const archivo = ARCHIVOS[url];
   if (!archivo) return res.writeHead(404).end();
-  res.writeHead(200, { 'Content-Type': `${archivo[1]}; charset=utf-8`, 'Cache-Control': 'no-cache' });
-  fs.createReadStream(path.join(__dirname, 'public', archivo[0])).pipe(res);
+  // no-store: que ni el navegador ni Cloudflare guarden una version vieja de la pagina.
+  res.writeHead(200, { 'Content-Type': `${archivo[1]}; charset=utf-8`, 'Cache-Control': 'no-store' });
+  if (url !== '/') return fs.createReadStream(path.join(__dirname, 'public', archivo[0])).pipe(res);
+  // El ?v= cambia con cada version de oficina.js, por si algun cache ya tenia la anterior.
+  const version = Math.round(fs.statSync(path.join(__dirname, 'public', 'oficina.js')).mtimeMs);
+  res.end(fs.readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf8').replace('src="/oficina.js"', `src="/oficina.js?v=${version}"`));
 });
 
 server.on('error', (err) => {
