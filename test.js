@@ -1,6 +1,6 @@
 // Prueba del estado: node test.js
 const assert = require('assert');
-const { crearOficina, aplicar, foto } = require('./estado');
+const { crearOficina, aplicar, foto, publica } = require('./estado');
 
 const of = crearOficina();
 const base = { session_id: 's1', cwd: 'C:\\Users\\yo\\Projects\\mcp' };
@@ -42,6 +42,17 @@ assert.equal(foto(of, 1000 + 21000).sesiones[0].agentes.length, 0);
 assert.equal(aplicar(of, {}), false);
 assert.equal(aplicar(of, { ...base, hook_event_name: 'Raro' }), false);
 
+// La version publica no deja salir rutas, comandos ni bitacora.
+ev({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'cat .env' } });
+ev({ hook_event_name: 'Notification', message: 'Claude needs your permission to use Bash' });
+const pub = JSON.stringify(publica(foto(of, 1000)));
+for (const secreto of ['cat .env', 'Projects', 'permission']) assert(!pub.includes(secreto), secreto);
+assert.equal(publica(foto(of, 1000)).sesiones[0].espera.tipo, 'permiso');
+
+// Sesion de un amigo: su nombre va en la sala.
+aplicar(of, { hook_event_name: 'SessionStart', session_id: 'Ana:s9', cwd: '/home/ana/api-pagos', dueno: 'Ana' }, 1000);
+assert(foto(of, 1000).sesiones.some((x) => x.proyecto === 'Ana · api-pagos'));
+
 ev({ hook_event_name: 'SessionEnd' });
-assert.equal(foto(of, 1000).sesiones.length, 0);
+assert.equal(foto(of, 1000).sesiones.filter((x) => x.id === 's1').length, 0);
 console.log('OK estado');

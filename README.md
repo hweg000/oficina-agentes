@@ -98,6 +98,41 @@ segundo plano y no frenan a Claude Code aunque la oficina esté apagada.
 
 Para desconectarla, borra ese bloque `hooks`.
 
+## Barrio con amigos (Cloudflare Tunnel)
+
+Una máquina hace de "barrio": corre la oficina y la publica con un túnel de
+Cloudflare (por ejemplo `https://oficinas.tudominio.com` → `http://localhost:3950`).
+Cada amigo manda sus eventos ahí con su propio token y todos ven las oficinas
+de todos, con el nombre de cada quien en sus salas.
+
+1. En la máquina del barrio, un token por amigo (inventa cadenas largas al azar):
+
+   ```
+   OFICINA_TOKENS="Ana:token-de-ana,Beto:token-de-beto" OFICINA_NOMBRE=Leo npm start
+   ```
+
+   `OFICINA_NOMBRE` es para que tus propias salas (las de tus hooks locales)
+   también lleven tu nombre.
+
+2. En Cloudflare Zero Trust → Access, protege el subdominio con una política
+   **Allow** con los correos de tus amigos, y agrega otra aplicación para la ruta
+   `/evento` con política **Bypass** (esa la protege el token).
+
+3. Cada amigo agrega, en cada evento de sus hooks, un segundo comando junto al
+   local (o en vez de él, si no corre la oficina en su compu):
+
+   ```json
+   { "type": "command", "async": true, "command": "curl -s -m 5 -H \"Content-Type: application/json\" -H \"Authorization: Bearer token-de-ana\" --data-binary @- https://oficinas.tudominio.com/evento >/dev/null 2>&1 || true" }
+   ```
+
+Lo que entra por el túnel (trae el header `cf-connecting-ip`) se trata como de
+fuera: `/evento` exige token, `/crudo` no existe, y `/eventos` y `/estado` llegan
+sin rutas, comandos, textos de permisos ni bitácora.
+
+Ojo: el hook manda el evento **completo** (rutas, comandos, lo que se leyó o
+escribió) a la máquina del barrio. Ahí no se guarda, pero quien la corre lo
+recibe y lo ve sin filtrar en su `localhost`.
+
 ## Depurar
 
 - `http://localhost:3950/estado`: lo que la oficina cree que pasa.

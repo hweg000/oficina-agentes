@@ -5,16 +5,23 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const { crearOficina, aplicar, foto } = require('./estado');
+const { crearOficina, aplicar, foto, publica } = require('./estado');
 
 const PUERTO = Number(process.env.OFICINA_PORT) || 3950;
+// Modo barrio: OFICINA_TOKENS="Ana:token1,Beto:token2" deja que cada amigo mande sus eventos por el tunel.
+const TOKENS = new Map(
+  (process.env.OFICINA_TOKENS || '').split(',').filter((x) => x.includes(':')).map((x) => x.trim().split(':').reverse())
+);
+const NOMBRE = process.env.OFICINA_NOMBRE || ''; // para que tus propias salas tambien lleven tu nombre
+// Lo que entra por Cloudflare Tunnel trae este header; lo local (tus hooks, tu navegador) no.
+const esRemoto = (req) => Boolean(req.headers['cf-connecting-ip']);
 const ARCHIVOS = {
   '/': ['index.html', 'text/html'],
   '/oficina.js': ['oficina.js', 'text/javascript'],
 };
 
 const oficina = crearOficina();
-const clientes = new Set();
+const clientes = new Map(); // res -> remoto
 const crudo = []; // ultimos eventos (solo nombres de campos) para depurar los hooks
 
 let pendiente = null;
@@ -22,16 +29,21 @@ function emitir() {
   if (pendiente) return;
   pendiente = setTimeout(() => {
     pendiente = null;
-    const datos = `data: ${JSON.stringify(foto(oficina))}\n\n`;
-    for (const res of clientes) res.write(datos);
+    const f = foto(oficina);
+    const datos = `data: ${JSON.stringify(f)}\n\n`;
+    const datosPublicos = `data: ${JSON.stringify(publica(f))}\n\n`;
+    for (const [res, remoto] of clientes) res.write(remoto ? datosPublicos : datos);
   }, 80);
 }
 setInterval(emitir, 5000); // para que "dormido" y las despedidas avancen sin eventos nuevos
 
 const server = http.createServer((req, res) => {
   const url = req.url.split('?')[0];
+  const remoto = esRemoto(req);
 
   if (req.method === 'POST' && url === '/evento') {
+    const dueno = remoto ? TOKENS.get((req.headers.authorization || '').replace(/^Bearer\s+/i, '')) : NOMBRE;
+    if (remoto && !dueno) return res.writeHead(401).end();
     let cuerpo = '';
     req.on('data', (c) => {
       cuerpo += c;
@@ -40,6 +52,9 @@ const server = http.createServer((req, res) => {
     req.on('end', () => {
       try {
         const ev = JSON.parse(cuerpo);
+        ev.dueno = dueno;
+        // Dos amigos nunca comparten sesion, aunque su session_id coincidiera.
+        if (dueno && ev.session_id) ev.session_id = `${dueno}:${ev.session_id}`;
         crudo.push({ evento: ev.hook_event_name, herramienta: ev.tool_name, campos: Object.keys(ev) });
         if (crudo.length > 50) crudo.shift();
         // _prueba_hace_ms solo lo manda prueba-estados.js, para fingir un evento viejo (estado "dormido").
@@ -52,15 +67,17 @@ const server = http.createServer((req, res) => {
 
   if (url === '/eventos') {
     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
-    res.write(`data: ${JSON.stringify(foto(oficina))}\n\n`);
-    clientes.add(res);
+    const f = foto(oficina);
+    res.write(`data: ${JSON.stringify(remoto ? publica(f) : f)}\n\n`);
+    clientes.set(res, remoto);
     req.on('close', () => clientes.delete(res));
     return;
   }
 
-  if (url === '/estado' || url === '/crudo') {
+  if (url === '/estado' || (url === '/crudo' && !remoto)) {
+    const f = foto(oficina);
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-    return res.end(JSON.stringify(url === '/estado' ? foto(oficina) : crudo, null, 2));
+    return res.end(JSON.stringify(url === '/crudo' ? crudo : remoto ? publica(f) : f, null, 2));
   }
 
   const archivo = ARCHIVOS[url];

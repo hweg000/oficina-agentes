@@ -37,10 +37,11 @@ function obtenerSesion(of, ev, ahora) {
   let s = of.sesiones.get(ev.session_id);
   if (!s) {
     const cwd = ev.cwd || '';
+    const proyecto = cwd.split(/[\\/]/).filter(Boolean).pop() || 'sin proyecto';
     s = {
       id: ev.session_id,
       cwd,
-      proyecto: cwd.split(/[\\/]/).filter(Boolean).pop() || 'sin proyecto',
+      proyecto: ev.dueno ? `${ev.dueno} · ${proyecto}` : proyecto,
       estado: 'listo',
       detalle: '',
       espera: null,
@@ -184,4 +185,19 @@ function foto(of, ahora = Date.now()) {
   return { ahora, sesiones };
 }
 
-module.exports = { crearOficina, aplicar, foto, estadoDeHerramienta };
+// Lo que ve quien entra desde fuera (tunel): sin rutas, comandos, textos ni bitacora.
+function publica(f) {
+  return {
+    ahora: f.ahora,
+    sesiones: f.sesiones.map((s) => ({
+      ...s,
+      cwd: '',
+      detalle: '',
+      espera: s.espera && { ...s.espera, texto: '' },
+      agentes: s.agentes.map((a) => ({ ...a, detalle: '' })),
+      bitacora: [],
+    })),
+  };
+}
+
+module.exports = { crearOficina, aplicar, foto, publica, estadoDeHerramienta };
