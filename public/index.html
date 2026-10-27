@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Oficina de agentes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --fondo: #dfe8f1;
+    --panel: rgba(255, 255, 255, 0.82);
+    --texto: #2b3440;
+    --suave: #6d7886;
+    --linea: rgba(43, 52, 64, 0.09);
+    --acento: #ff7a59;
+    --sombra: 0 10px 30px rgba(43, 52, 64, 0.14);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--fondo); color: var(--texto); font-family: 'Nunito', system-ui, sans-serif; }
+  #escena { position: fixed; inset: 0; }
+  #escena canvas { display: block; }
+  .capa-etiquetas { position: absolute; inset: 0; pointer-events: none; }
+
+  .etiqueta-sala { text-align: center; transform: translateY(-6px); }
+  .etiqueta-sala b { display: block; font-size: 15px; font-weight: 800; padding: 4px 12px; border-radius: 999px; background: rgba(255, 255, 255, 0.9); box-shadow: var(--sombra); }
+  .etiqueta-sala span { display: inline-block; margin-top: 4px; font-size: 11px; color: var(--suave); background: rgba(255, 255, 255, 0.7); padding: 1px 8px; border-radius: 999px; }
+  .etiqueta-sala.vacia { opacity: 0.55; }
+
+  .pill { font-size: 11px; font-weight: 700; white-space: nowrap; max-width: 200px; overflow: hidden; text-overflow: ellipsis; padding: 3px 9px 3px 7px; border-radius: 999px; background: rgba(255, 255, 255, 0.92); box-shadow: 0 3px 10px rgba(43, 52, 64, 0.15); display: flex; align-items: center; gap: 5px; }
+  .pill i { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--c); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 25%, transparent); }
+  .pill small { font-weight: 500; color: var(--suave); overflow: hidden; text-overflow: ellipsis; }
+  .pill.ayudante { font-size: 10px; opacity: 0.92; }
+  .pill.sel { outline: 2px solid var(--texto); }
+
+  .burbuja { max-width: 230px; padding: 8px 11px; border-radius: 14px 14px 14px 4px; background: #fff; box-shadow: var(--sombra); font-size: 12px; line-height: 1.3; border: 2px solid var(--acento); animation: latir 1.6s ease-in-out infinite; }
+  .burbuja b { display: block; color: var(--acento); font-size: 12px; margin-bottom: 2px; }
+  /* "translate" y no "transform": transform lo usa three.js para posicionar la etiqueta */
+  @keyframes latir { 50% { translate: 0 -3px; } }
+
+  .etiqueta-yo { font-weight: 800; font-size: 13px; padding: 3px 12px; border-radius: 999px; background: #2b3440; color: #fff; box-shadow: var(--sombra); }
+  .etiqueta-yo.llaman { background: var(--acento); }
+
+  #aviso { position: fixed; left: 16px; top: 16px; display: none; padding: 10px 16px; border-radius: 14px; background: var(--acento); color: #fff; font-weight: 800; box-shadow: var(--sombra); cursor: pointer; border: 0; font: inherit; font-weight: 800; }
+  #aviso.si { display: block; }
+  #titulo { position: fixed; left: 16px; bottom: 16px; font-weight: 800; font-size: 13px; color: var(--suave); background: rgba(255, 255, 255, 0.7); padding: 6px 12px; border-radius: 999px; }
+
+  #vacio { position: fixed; left: 50%; top: 18%; transform: translateX(-50%); text-align: center; background: var(--panel); backdrop-filter: blur(10px); padding: 16px 22px; border-radius: 18px; box-shadow: var(--sombra); display: none; max-width: calc(100vw - 32px); }
+  #vacio.si { display: block; }
+  #vacio b { display: block; font-size: 17px; }
+  #vacio span { color: var(--suave); font-size: 13px; }
+
+  #panel { position: fixed; top: 16px; right: 16px; bottom: 16px; width: 330px; background: var(--panel); backdrop-filter: blur(14px); border-radius: 20px; box-shadow: var(--sombra); display: flex; flex-direction: column; overflow: hidden; }
+  #panel header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 14px 16px 10px; }
+  #panel header h1 { font-size: 16px; margin: 0; flex: 1 1 100%; }
+  #panel header #conexion { flex: 1; }
+  #conexion { font-size: 11px; font-weight: 700; color: var(--suave); display: flex; align-items: center; gap: 5px; }
+  #conexion::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #e05555; }
+  #conexion.ok::before { background: #4fcf73; }
+  #editor { border: 0; background: rgba(43, 52, 64, 0.07); border-radius: 8px; padding: 4px 6px; font: inherit; font-size: 12px; color: var(--texto); cursor: pointer; }
+  #plegar { border: 0; background: rgba(43, 52, 64, 0.07); border-radius: 8px; padding: 4px 8px; font: inherit; font-size: 12px; cursor: pointer; color: var(--texto); }
+  #lista { overflow-y: auto; padding: 0 10px 10px; flex: 1; }
+  .grupo h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--suave); margin: 12px 6px 6px; }
+  .grupo.esperan h3 { color: var(--acento); }
+  .fila { display: grid; grid-template-columns: 10px 1fr auto; gap: 2px 8px; align-items: center; width: 100%; text-align: left; border: 0; background: transparent; padding: 7px 8px; border-radius: 10px; font: inherit; color: inherit; cursor: pointer; }
+  .fila:hover { background: rgba(43, 52, 64, 0.05); }
+  .fila.sel { background: rgba(43, 52, 64, 0.09); }
+  .fila.ayudante { padding-left: 24px; grid-template-columns: 8px 1fr auto; }
+  .fila .dot { width: 10px; height: 10px; border-radius: 50%; }
+  .fila.ayudante .dot { width: 8px; height: 8px; }
+  .fila .nombre { font-weight: 700; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fila .estado { font-size: 11px; font-weight: 800; color: color-mix(in srgb, var(--c) 70%, #2b3440); }
+  .fila .det { grid-column: 2 / 4; font-size: 11px; color: var(--suave); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #detalle { border-top: 1px solid var(--linea); max-height: 40%; overflow-y: auto; padding: 10px 16px 14px; font-size: 12px; }
+  #detalle:empty { display: none; }
+  #detalle h2 { font-size: 13px; margin: 0 0 6px; }
+  #detalle .ruta { color: var(--suave); font-size: 11px; word-break: break-all; margin-bottom: 8px; }
+  #detalle ol { list-style: none; margin: 0; padding: 0; }
+  #detalle li { padding: 3px 0; border-bottom: 1px dashed var(--linea); display: grid; grid-template-columns: 54px 1fr; gap: 6px; }
+  #detalle li time { color: var(--suave); font-variant-numeric: tabular-nums; }
+  #detalle li em { font-style: normal; font-weight: 700; }
+
+  .boton { display: inline-block; border: 0; border-radius: 10px; padding: 7px 12px; font: inherit; font-size: 12px; font-weight: 800; background: #2b3440; color: #fff; text-decoration: none; cursor: pointer; }
+  .boton.secundario { background: rgba(43, 52, 64, 0.08); color: var(--texto); }
+  #detalle .boton { margin-bottom: 10px; }
+
+  #tarjeta { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); width: min(440px, calc(100vw - 32px)); background: #fff; border-radius: 18px; box-shadow: var(--sombra); border: 2px solid var(--acento); padding: 16px 18px; display: none; }
+  #tarjeta.si { display: block; }
+  #tarjeta b { color: var(--acento); font-size: 15px; }
+  #tarjeta p { margin: 6px 0 10px; font-size: 14px; line-height: 1.4; white-space: pre-wrap; word-break: break-word; }
+  #tarjeta .quien { font-size: 12px; font-weight: 700; display: flex; align-items: center; gap: 6px; }
+  #tarjeta .quien i { width: 10px; height: 10px; border-radius: 50%; }
+  #tarjeta .nota { font-size: 12px; color: var(--suave); margin: 4px 0 12px; }
+  #tarjeta .acciones { display: flex; gap: 8px; justify-content: flex-end; }
+
+  #modo { position: fixed; left: 16px; bottom: 56px; border: 0; border-radius: 999px; padding: 8px 14px; font: inherit; font-size: 13px; font-weight: 800; background: #2b3440; color: #fff; box-shadow: var(--sombra); cursor: pointer; }
+  #accion { position: fixed; left: 50%; top: 62%; transform: translateX(-50%); display: none; padding: 8px 14px; border-radius: 12px; background: rgba(255, 255, 255, 0.92); box-shadow: var(--sombra); font-size: 14px; font-weight: 700; white-space: nowrap; }
+  #accion.si { display: block; }
+  #accion b { color: var(--acento); }
+  #accion kbd { display: inline-block; min-width: 22px; text-align: center; padding: 1px 6px; margin-right: 6px; border-radius: 6px; background: #2b3440; color: #fff; font: inherit; font-size: 12px; }
+  #mira { position: fixed; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: rgba(43, 52, 64, 0.55); box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.6); display: none; pointer-events: none; }
+  body[data-modo="primera"] #mira { display: block; }
+
+  #panel.plegado { bottom: auto; }
+  #panel.plegado #lista, #panel.plegado #detalle { display: none; }
+
+  @media (max-width: 700px) {
+    #panel { top: auto; left: 16px; right: 16px; width: auto; max-height: 45vh; }
+    #titulo { display: none; }
+  }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+  <div id="escena"></div>
+  <button id="aviso" type="button"></button>
+  <div id="vacio"><b>Nadie trabajando por ahora</b><span>Abre Claude Code en cualquier proyecto y aquí aparecerá su escritorio.</span></div>
+  <div id="titulo">Clic en el piso: caminas · clic en un agente: vas a verlo · arrastra: mueves la vista · rueda: zoom · V: cambiar vista</div>
+  <div id="tarjeta" role="dialog" aria-live="polite"></div>
+  <button id="modo" type="button" title="Cambiar vista (V)">Vista: Isométrica</button>
+  <div id="accion" aria-live="polite"></div>
+  <div id="mira"></div>
+  <aside id="panel">
+    <header>
+      <h1>Oficina de agentes</h1>
+      <span id="conexion">Conectando</span>
+      <select id="editor" title="Editor donde abrir los proyectos" aria-label="Editor">
+        <option value="antigravity-ide">Antigravity</option>
+        <option value="vscode">VS Code</option>
+      </select>
+      <button id="plegar" type="button">Ocultar</button>
+    </header>
+    <div id="lista"></div>
+    <section id="detalle"></section>
+  </aside>
+  <script type="module" src="/oficina.js"></script>
+</body>
+</html>
