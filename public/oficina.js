@@ -882,7 +882,7 @@ const otros = new Map(); // `${nombre}:${id}` -> { c, meta }
 function sincronizarJugadores(lista) {
   const vivos = new Set();
   for (const j of lista) {
-    if (j.id === miId) continue;
+    if (j.id === miId || j.nombre === miNombre) continue; // tus otras pestañas tambien eres tu
     const k = `${j.nombre}:${j.id}`;
     vivos.add(k);
     let o = otros.get(k);
@@ -945,7 +945,7 @@ function recibirChat(lista) {
     li.innerHTML = `<b style="color:${m.id === miId ? '#c27a00' : COLORES[hash(m.nombre) % COLORES.length]}">${esc(m.nombre)}</b>${esc(m.texto)}`;
     mensajes.append(li);
     if (Date.now() - m.t > DICE_MS) continue; // historial: solo en la lista
-    const o = m.id === miId ? { c: yo } : otros.get(`${m.nombre}:${m.id}`);
+    const o = m.id === miId || m.nombre === miNombre ? { c: yo } : otros.get(`${m.nombre}:${m.id}`);
     if (o) decir(o.c, m.texto);
   }
   while (mensajes.children.length > 30) mensajes.firstChild.remove();
