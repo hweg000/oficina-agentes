@@ -607,6 +607,10 @@ function animarPersona(p, t, dt) {
       case 'listo': brazoI = brazoD = -0.15; inclina = -0.12; cabezaZ = Math.sin(tt * 0.7) * 0.05; break;
       default: brazoI = -0.35; brazoD = -0.35; cabezaZ = Math.sin(tt * 1.3) * 0.1; cabezaX = -0.1;
     }
+  } else if (p.reaccionGesto && t - p.reaccionGesto.inicio < p.reaccionGesto.duracion) {
+    salto = Math.abs(Math.sin(tt * 8)) * 0.12;
+    brazoD = -2.5 + Math.sin(tt * 12) * 0.25;
+    cabezaZ = Math.sin(tt * 6) * 0.15;
   } else if (p.datos.terminado) {
     salto = Math.abs(Math.sin(tt * 6)) * 0.35;
     brazoI = brazoD = -2.9;
@@ -859,6 +863,7 @@ function moverYo(t, dt) {
     }
   }
   if (modo !== 'iso') caminando = moverConTeclas(dt) || caminando;
+  if (caminando && yo.gestoActivo) cancelarGesto(yo);
   pasos(yo, caminando, t, dt);
   anillo.position.x = yo.g.position.x;
   anillo.position.z = yo.g.position.z;
@@ -879,12 +884,14 @@ function pasos(c, caminando, t, dt) {
 }
 
 // ---------- otros visitantes (multijugador) ----------
+const paramNombre = new URLSearchParams(location.search).get('nombre');
+const rutaConNombre = (r) => (paramNombre ? `${r}?nombre=${encodeURIComponent(paramNombre)}` : r);
 const miId = Math.random().toString(36).slice(2, 12);
 const otros = new Map(); // `${nombre}:${id}` -> { c, meta }
 function sincronizarJugadores(lista) {
   const vivos = new Set();
   for (const j of lista) {
-    if (j.id === miId || j.nombre === miNombre) continue; // tus otras pestañas tambien eres tu
+    if (j.id === miId || (!paramNombre && j.nombre === miNombre)) continue; // tus otras pestañas tambien eres tu
     const k = `${j.nombre}:${j.id}`;
     vivos.add(k);
     let o = otros.get(k);
@@ -920,7 +927,9 @@ function moverOtros(t, dt) {
     let dif = meta.ry - c.g.rotation.y;
     dif = Math.atan2(Math.sin(dif), Math.cos(dif));
     c.g.rotation.y += dif * Math.min(1, dt * 10);
-    pasos(c, d > 0.05, t, dt);
+    if (d > 0.05 && c.gestoActivo) cancelarGesto(c);
+    const gestoActivo = actualizarGesto(c, t, dt);
+    if (!gestoActivo) pasos(c, d > 0.05, t, dt);
   }
 }
 
@@ -956,12 +965,15 @@ function recibirChat(lista) {
 }
 function globos() {
   const ahora = Date.now();
-  for (const c of [yo, ...[...otros.values()].map((o) => o.c)]) if (c.dice) c.dice.visible = c.g.visible && ahora < c.diceHasta;
+  for (const c of [yo, ...[...otros.values()].map((o) => o.c), ...[...personas.values()].map((p) => p)]) {
+    if (c.dice) c.dice.visible = c.g.visible && ahora < c.diceHasta;
+    if (c.globoGesto && c.globoGestoHasta) c.globoGesto.visible = c.g.visible && ahora < c.globoGestoHasta;
+  }
 }
 formChat.addEventListener('submit', (e) => {
   e.preventDefault();
   const texto = escribir.value.trim();
-  if (texto) fetch('/chat', { method: 'POST', body: JSON.stringify({ id: miId, texto }) }).catch(() => {});
+  if (texto) fetch(rutaConNombre('/chat'), { method: 'POST', body: JSON.stringify({ id: miId, texto }) }).catch(() => {});
   escribir.value = '';
   escribir.blur(); // de vuelta a caminar con el teclado
 });
@@ -982,16 +994,529 @@ function mandarPosicion(t) {
   ultimaPos = pos;
   ultimoEnvio = t;
   const [px, py, pz, ry] = pos.split(',').map(Number);
-  fetch('/posicion', { method: 'POST', body: JSON.stringify({ id: miId, x: px, y: py, z: pz, ry }) }).catch(() => {});
+  fetch(rutaConNombre('/posicion'), { method: 'POST', body: JSON.stringify({ id: miId, x: px, y: py, z: pz, ry }) }).catch(() => {});
+}
+
+// ---------- ruleta de gestos ----------
+const GESTOS_SOLO = [
+  {
+    id: 'bailar',
+    nombre: 'Bailar',
+    icono: '🕺',
+    desc: '¡Pasos de breakdance y ritmo!',
+    duracion: 4.2,
+    animar: (c, p, dt, t) => {
+      const tt = t * 14;
+      c.cadera.position.y = 0.47 + Math.abs(Math.sin(tt * 0.5)) * 0.14;
+      c.cadera.rotation.y = Math.sin(tt * 0.5) * 0.45;
+      c.cadera.rotation.z = Math.cos(tt * 0.5) * 0.18;
+      c.brazos[0].rotation.x = -1.6 + Math.sin(tt) * 1.1;
+      c.brazos[1].rotation.x = -1.6 - Math.sin(tt) * 1.1;
+      c.brazos[0].rotation.z = -0.3 + Math.sin(tt * 0.5) * 0.4;
+      c.brazos[1].rotation.z = 0.3 - Math.sin(tt * 0.5) * 0.4;
+      c.piernas[0].rotation.x = Math.sin(tt * 0.5) * 0.45;
+      c.piernas[1].rotation.x = -Math.sin(tt * 0.5) * 0.45;
+      c.cabeza.rotation.z = Math.sin(tt * 0.5) * 0.25;
+      c.cabeza.rotation.x = -0.1 + Math.abs(Math.sin(tt)) * 0.15;
+    },
+  },
+  {
+    id: 'flexiones',
+    nombre: 'Flexiones',
+    icono: '💪',
+    desc: 'Entrenamiento físico al suelo',
+    duracion: 4.0,
+    animar: (c, p, dt, t) => {
+      const faseEntrar = Math.min(1, p * 4);
+      const faseSalir = Math.min(1, (1 - p) * 4);
+      const factor = Math.min(faseEntrar, faseSalir);
+      const ciclo = Math.sin(t * 8);
+      c.cadera.position.y = 0.47 * (1 - factor) + (0.16 + Math.max(0, ciclo) * 0.12) * factor;
+      c.cadera.rotation.x = -1.4 * factor;
+      c.brazos[0].rotation.x = (-0.1) * (1 - factor) + (-1.3 + ciclo * 0.4) * factor;
+      c.brazos[1].rotation.x = (-0.1) * (1 - factor) + (-1.3 + ciclo * 0.4) * factor;
+      c.brazos[0].rotation.z = -0.3 * factor;
+      c.brazos[1].rotation.z = 0.3 * factor;
+      c.piernas[0].rotation.x = 0.25 * factor;
+      c.piernas[1].rotation.x = 0.25 * factor;
+      c.cabeza.rotation.x = 0.7 * factor;
+    },
+  },
+  {
+    id: 'voltereta',
+    nombre: 'Voltereta',
+    icono: '🤸',
+    desc: 'Salto mortal acrobático 360°',
+    duracion: 2.4,
+    animar: (c, p, dt, t) => {
+      if (p < 0.15) {
+        const k = p / 0.15;
+        c.cadera.position.y = 0.47 - k * 0.18;
+        c.cadera.rotation.x = k * 0.3;
+        c.brazos[0].rotation.x = k * 0.5;
+        c.brazos[1].rotation.x = k * 0.5;
+        c.piernas[0].rotation.x = -k * 0.4;
+        c.piernas[1].rotation.x = -k * 0.4;
+      } else if (p < 0.85) {
+        const k = (p - 0.15) / 0.7;
+        const salto = Math.sin(k * Math.PI) * 1.5;
+        c.cadera.position.y = 0.47 + salto;
+        c.cadera.rotation.x = -k * Math.PI * 2;
+        c.brazos[0].rotation.x = -2.6;
+        c.brazos[1].rotation.x = -2.6;
+        c.brazos[0].rotation.z = -0.4;
+        c.brazos[1].rotation.z = 0.4;
+        c.piernas[0].rotation.x = 0.75 * Math.sin(k * Math.PI);
+        c.piernas[1].rotation.x = 0.75 * Math.sin(k * Math.PI);
+      } else {
+        const k = (p - 0.85) / 0.15;
+        c.cadera.position.y = 0.47 - (1 - k) * 0.08;
+        c.cadera.rotation.x = 0;
+        c.brazos[0].rotation.x = -2.3 * (1 - k);
+        c.brazos[1].rotation.x = -2.3 * (1 - k);
+        c.brazos[0].rotation.z = -0.5 * (1 - k);
+        c.brazos[1].rotation.z = 0.5 * (1 - k);
+        c.piernas[0].rotation.x = 0;
+        c.piernas[1].rotation.x = 0;
+      }
+    },
+  },
+  {
+    id: 'meditar',
+    nombre: 'Meditar',
+    icono: '🧘',
+    desc: 'Modo Zen y levitación',
+    duracion: 4.5,
+    animar: (c, p, dt, t) => {
+      const entrada = Math.min(1, p * 3);
+      const salida = Math.min(1, (1 - p) * 3);
+      const k = Math.min(entrada, salida);
+      const flotar = Math.sin(t * 3.5) * 0.1;
+      c.cadera.position.y = 0.47 + (0.38 + flotar) * k;
+      c.piernas[0].rotation.x = 1.15 * k;
+      c.piernas[1].rotation.x = 1.15 * k;
+      c.piernas[0].rotation.z = -0.55 * k;
+      c.piernas[1].rotation.z = 0.55 * k;
+      c.brazos[0].rotation.x = -0.65 * k;
+      c.brazos[1].rotation.x = -0.65 * k;
+      c.brazos[0].rotation.z = -0.6 * k;
+      c.brazos[1].rotation.z = 0.6 * k;
+      c.cabeza.rotation.x = -0.15 * k;
+      c.cabeza.rotation.y = Math.sin(t * 1.5) * 0.08 * k;
+    },
+  },
+  {
+    id: 'estirarse',
+    nombre: 'Estirarse',
+    icono: '🥱',
+    desc: 'Bostezo y desperezarse',
+    duracion: 3.5,
+    animar: (c, p, dt, t) => {
+      const k = Math.sin(p * Math.PI);
+      c.brazos[0].rotation.x = -2.85 * k;
+      c.brazos[1].rotation.x = -2.85 * k;
+      c.brazos[0].rotation.z = (-0.4 + Math.sin(t * 5) * 0.1) * k;
+      c.brazos[1].rotation.z = (0.4 - Math.sin(t * 5) * 0.1) * k;
+      c.cadera.rotation.x = -0.22 * k;
+      c.cadera.position.y = 0.47 + 0.06 * k;
+      c.cabeza.rotation.x = -0.38 * k;
+      c.cabeza.rotation.z = Math.sin(t * 4) * 0.12 * k;
+    },
+  },
+  {
+    id: 'reloj',
+    nombre: 'Mirar reloj',
+    icono: '⌚',
+    desc: 'Revisar la hora con prisa',
+    duracion: 3.2,
+    animar: (c, p, dt, t) => {
+      const k = Math.sin(p * Math.PI);
+      c.brazos[0].rotation.x = -1.45 * k;
+      c.brazos[0].rotation.y = 0.75 * k;
+      c.brazos[0].rotation.z = -0.55 * k;
+      c.cabeza.rotation.x = 0.35 * k;
+      c.cabeza.rotation.y = -0.3 * k;
+      c.brazos[1].rotation.x = -0.15 + Math.sin(t * 6) * 0.1 * k;
+      c.piernas[1].rotation.x = Math.abs(Math.sin(t * 9)) * 0.28 * k;
+    },
+  },
+];
+
+const GESTOS_ACOMPANADO = [
+  {
+    id: 'saludar',
+    nombre: 'Saludar',
+    icono: '👋',
+    desc: 'Saluda con la mano levantada',
+    duracion: 3.2,
+    animar: (c, p, dt, t) => {
+      const k = Math.sin(p * Math.PI);
+      c.brazos[1].rotation.x = -2.75 * k;
+      c.brazos[1].rotation.z = (0.4 + Math.sin(t * 14) * 0.5) * k;
+      c.brazos[0].rotation.x = -0.25 * k;
+      c.cabeza.rotation.z = Math.sin(t * 7) * 0.18 * k;
+      c.cabeza.rotation.x = -0.12 * k;
+      c.cadera.position.y = 0.47 + Math.abs(Math.sin(t * 7)) * 0.05 * k;
+    },
+  },
+  {
+    id: 'chocar5',
+    nombre: 'Chocar los 5',
+    icono: '✋',
+    desc: '¡Dame esos cinco en el aire!',
+    duracion: 2.8,
+    animar: (c, p, dt, t) => {
+      const k = Math.sin(p * Math.PI);
+      c.cadera.position.y = 0.47 + Math.abs(Math.sin(t * 8)) * 0.1 * k;
+      c.cadera.rotation.x = 0.12 * k;
+      c.brazos[1].rotation.x = (-2.3 + Math.sin(t * 12) * 0.2) * k;
+      c.brazos[1].rotation.y = -0.35 * k;
+      c.brazos[1].rotation.z = 0.2 * k;
+      c.brazos[0].rotation.x = -0.4 * k;
+      c.cabeza.rotation.x = -0.15 * k;
+    },
+  },
+  {
+    id: 'reverencia',
+    nombre: 'Reverencia',
+    icono: '🙇',
+    desc: 'Saludo formal y respeto',
+    duracion: 3.0,
+    animar: (c, p, dt, t) => {
+      const inclinacion = Math.sin(p * Math.PI) * 0.7;
+      c.cadera.rotation.x = inclinacion;
+      c.cadera.position.y = 0.47 - inclinacion * 0.06;
+      c.cabeza.rotation.x = inclinacion * 0.5;
+      c.brazos[0].rotation.x = -inclinacion * 0.9;
+      c.brazos[1].rotation.x = -inclinacion * 0.9;
+    },
+  },
+  {
+    id: 'aplaudir',
+    nombre: 'Aplaudir',
+    icono: '👏',
+    desc: 'Aplausos y celebración',
+    duracion: 3.5,
+    animar: (c, p, dt, t) => {
+      const k = Math.sin(p * Math.PI);
+      const palmas = Math.sin(t * 18);
+      c.brazos[0].rotation.x = -1.35 * k;
+      c.brazos[1].rotation.x = -1.35 * k;
+      c.brazos[0].rotation.y = (0.55 + palmas * 0.28) * k;
+      c.brazos[1].rotation.y = (-0.55 - palmas * 0.28) * k;
+      c.cadera.position.y = 0.47 + Math.abs(palmas) * 0.06 * k;
+      c.cabeza.rotation.x = Math.sin(t * 9) * 0.1 * k;
+    },
+  },
+  {
+    id: 'senalar',
+    nombre: 'Señalar',
+    icono: '👉',
+    desc: 'Apuntar y llamar atención',
+    duracion: 3.0,
+    animar: (c, p, dt, t) => {
+      const k = Math.sin(p * Math.PI);
+      c.brazos[1].rotation.x = -1.57 * k;
+      c.brazos[1].rotation.y = -0.15 * k;
+      c.brazos[1].rotation.z = 0.1 * k;
+      c.brazos[0].rotation.x = -0.2 * k;
+      c.cadera.rotation.x = 0.1 * k;
+      c.cabeza.rotation.x = Math.sin(t * 7) * 0.12 * k;
+    },
+  },
+  {
+    id: 'corazon',
+    nombre: 'Dar amor',
+    icono: '❤️',
+    desc: 'Enviar afecto y corazones',
+    duracion: 3.2,
+    animar: (c, p, dt, t) => {
+      const k = Math.sin(p * Math.PI);
+      const apertura = Math.sin(p * Math.PI * 1.5);
+      c.cadera.position.y = 0.47 + Math.max(0, Math.sin(p * Math.PI * 2)) * 0.14;
+      c.brazos[0].rotation.x = (-1.4 - apertura * 0.6) * k;
+      c.brazos[1].rotation.x = (-1.4 - apertura * 0.6) * k;
+      c.brazos[0].rotation.z = (-0.1 - apertura * 0.5) * k;
+      c.brazos[1].rotation.z = (0.1 + apertura * 0.5) * k;
+      c.cabeza.rotation.x = -0.22 * k;
+    },
+  },
+];
+
+const GESTOS_MAP = Object.fromEntries([...GESTOS_SOLO, ...GESTOS_ACOMPANADO].map((g) => [g.id, g]));
+
+function mostrarGloboGesto(c, icono, texto) {
+  if (!c || !c.g) return;
+  if (!c.globoGesto) {
+    c.globoGesto = etiqueta('globo-gesto', `<i></i><span></span>`);
+    c.globoGesto.position.y = 2.45;
+    c.g.add(c.globoGesto);
+  }
+  const el = c.globoGesto.element;
+  el.querySelector('i').textContent = icono;
+  el.querySelector('span').textContent = texto;
+  c.globoGesto.visible = true;
+}
+
+function limpiarGesto(c) {
+  if (!c) return;
+  c.gestoActivo = null;
+  c.globoGestoHasta = 0;
+  if (c.globoGesto) c.globoGesto.visible = false;
+  c.cadera.position.y = 0.47;
+  c.cadera.rotation.set(0, 0, 0);
+  c.piernas[0].rotation.set(0, 0, 0);
+  c.piernas[1].rotation.set(0, 0, 0);
+  c.brazos[0].rotation.set(0, 0, 0);
+  c.brazos[1].rotation.set(0, 0, 0);
+  c.cabeza.rotation.set(0, 0, 0);
+}
+
+const cancelarGesto = limpiarGesto;
+
+function iniciarGesto(c, gesto, { objetivo = null, objetivoPersona = null, emitir = true } = {}) {
+  if (!c || !gesto) return;
+  limpiarGesto(c);
+  c.gestoActivo = {
+    id: gesto.id,
+    inicio: reloj.elapsedTime,
+    duracion: gesto.duracion,
+    objetivo: objetivo || null,
+  };
+  c.globoGestoHasta = Date.now() + Math.round(gesto.duracion * 1000);
+
+  if (objetivoPersona && objetivoPersona.g) {
+    const dir = objetivoPersona.g.position.clone().sub(c.g.position);
+    c.g.rotation.y = Math.atan2(dir.x, dir.z);
+  }
+
+  const texto = objetivo ? `${gesto.nombre} a ${objetivo}` : gesto.nombre;
+  mostrarGloboGesto(c, gesto.icono, texto);
+
+  if (c === yo && objetivoPersona && objetivoPersona.datos) {
+    const p = objetivoPersona;
+    p.reaccionGesto = { inicio: reloj.elapsedTime, duracion: 2.2, tipo: gesto.id };
+    const dirAgente = yo.g.position.clone().sub(p.g.position);
+    p.g.rotation.y = Math.atan2(dirAgente.x, dirAgente.z);
+    const resp = gesto.id === 'corazon' ? '🥰' : gesto.id === 'chocar5' ? '✋' : '👋';
+    mostrarGloboGesto(p, resp, '¡Hola!');
+    p.globoGestoHasta = Date.now() + 2500;
+  }
+
+  if (emitir && c === yo) {
+    fetch(rutaConNombre('/gesto'), {
+      method: 'POST',
+      body: JSON.stringify({ id: miId, gesto: gesto.id, objetivo: objetivo || null }),
+    }).catch(() => {});
+  }
+}
+
+function actualizarGesto(c, t, dt) {
+  if (!c || !c.gestoActivo) return false;
+  const g = c.gestoActivo;
+  const transcurrido = t - g.inicio;
+  if (transcurrido >= g.duracion) {
+    limpiarGesto(c);
+    return false;
+  }
+  const def = GESTOS_MAP[g.id];
+  if (def && def.animar) {
+    def.animar(c, transcurrido / g.duracion, dt, t);
+  }
+  return true;
+}
+
+function obtenerUsuarioCercano() {
+  const DIST_MAX_JUGADOR = 4.0;
+  let masCercano = null;
+  let menorDist = DIST_MAX_JUGADOR;
+
+  for (const [k, o] of otros) {
+    if (!o.c || !o.c.g || !o.c.g.visible) continue;
+    const d = o.c.g.position.distanceTo(yo.g.position);
+    if (d < menorDist) {
+      menorDist = d;
+      masCercano = {
+        tipo: 'jugador',
+        nombre: o.meta?.nombre || 'Compañero',
+        persona: o.c,
+        distancia: d,
+      };
+    }
+  }
+
+  if (!masCercano) {
+    let menorDistAgente = 3.2;
+    for (const p of personas.values()) {
+      if (!p.g || !p.g.visible) continue;
+      const d = p.g.position.distanceTo(yo.g.position);
+      if (d < menorDistAgente) {
+        menorDistAgente = d;
+        masCercano = {
+          tipo: 'agente',
+          nombre: nombreDe(p),
+          persona: p,
+          distancia: d,
+        };
+      }
+    }
+  }
+
+  return masCercano;
+}
+
+function recibirGesto(m) {
+  if (!m || m.id === miId) return;
+  const o = otros.get(`${m.nombre}:${m.id}`);
+  const g = GESTOS_MAP[m.gesto];
+  if (o && g) {
+    let objPersona = null;
+    if (m.objetivo === miNombre) objPersona = yo;
+    iniciarGesto(o.c, g, { objetivo: m.objetivo, objetivoPersona: objPersona, emitir: false });
+  }
+}
+
+const ruletaOverlay = document.getElementById('ruleta-overlay');
+const ruletaPanel = document.getElementById('ruleta-panel');
+const ruletaBadge = document.getElementById('ruleta-badge');
+const ruletaTitulo = document.getElementById('ruleta-titulo');
+const ruletaDesc = document.getElementById('ruleta-desc');
+const ruletaSvg = document.getElementById('ruleta-svg');
+const iconoCentro = document.getElementById('ruleta-icono-centro');
+const nombreCentro = document.getElementById('ruleta-nombre-centro');
+const subCentro = document.getElementById('ruleta-sub-centro');
+const botonGestos = document.getElementById('boton-gestos');
+
+let ruletaAbierta = false;
+let gestosActuales = [];
+
+function construirRuletaSvg(gestos, contexto) {
+  gestosActuales = gestos;
+  ruletaSvg.innerHTML = '';
+  const n = gestos.length;
+  const Rin = 58;
+  const Rout = 148;
+  const step = (Math.PI * 2) / n;
+  const gap = 0.055;
+
+  gestos.forEach((g, i) => {
+    const aMid = -Math.PI / 2 + i * step;
+    const a1 = aMid - step / 2 + gap;
+    const a2 = aMid + step / 2 - gap;
+
+    const x1a = (Rin * Math.cos(a1)).toFixed(2);
+    const y1a = (Rin * Math.sin(a1)).toFixed(2);
+    const x2a = (Rout * Math.cos(a1)).toFixed(2);
+    const y2a = (Rout * Math.sin(a1)).toFixed(2);
+    const x2b = (Rout * Math.cos(a2)).toFixed(2);
+    const y2b = (Rout * Math.sin(a2)).toFixed(2);
+    const x1b = (Rin * Math.cos(a2)).toFixed(2);
+    const y1b = (Rin * Math.sin(a2)).toFixed(2);
+
+    const d = `M ${x2a} ${y2a} A ${Rout} ${Rout} 0 0 1 ${x2b} ${y2b} L ${x1b} ${y1b} A ${Rin} ${Rin} 0 0 0 ${x1a} ${y1a} Z`;
+
+    const rIcon = 104;
+    const rText = 126;
+    const rNum = 73;
+
+    const xIcon = (rIcon * Math.cos(aMid)).toFixed(2);
+    const yIcon = (rIcon * Math.sin(aMid) - 3).toFixed(2);
+
+    const xText = (rText * Math.cos(aMid)).toFixed(2);
+    const yText = (rText * Math.sin(aMid) + 2).toFixed(2);
+
+    const xNum = (rNum * Math.cos(aMid)).toFixed(2);
+    const yNum = (rNum * Math.sin(aMid) + 2).toFixed(2);
+
+    const grupo = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    grupo.setAttribute('class', 'ruleta-sector');
+    grupo.setAttribute('data-index', i);
+
+    grupo.innerHTML = `
+      <path class="sector-path" d="${d}"></path>
+      <text class="sector-numero" x="${xNum}" y="${yNum}" text-anchor="middle" dominant-baseline="central">${i + 1}</text>
+      <text class="sector-icono" x="${xIcon}" y="${yIcon}">${g.icono}</text>
+      <text class="sector-nombre" x="${xText}" y="${yText}">${g.nombre}</text>
+    `;
+
+    const destacar = () => {
+      iconoCentro.textContent = g.icono;
+      nombreCentro.textContent = g.nombre;
+      subCentro.textContent = g.desc;
+      ruletaSvg.querySelectorAll('.ruleta-sector').forEach((s, idx) => {
+        s.classList.toggle('seleccionado', idx === i);
+      });
+    };
+
+    grupo.addEventListener('pointerenter', destacar);
+    grupo.addEventListener('click', (e) => {
+      e.stopPropagation();
+      ejecutarGestoDesdeRuleta(i);
+    });
+
+    ruletaSvg.appendChild(grupo);
+  });
+}
+
+function abrirRuleta() {
+  if (document.pointerLockElement) document.exitPointerLock();
+  const cercano = obtenerUsuarioCercano();
+  const contexto = cercano ? 'acompanado' : 'solo';
+  const lista = contexto === 'acompanado' ? GESTOS_ACOMPANADO : GESTOS_SOLO;
+
+  ruletaPanel.classList.toggle('solo', contexto === 'solo');
+  ruletaPanel.classList.toggle('acompanado', contexto === 'acompanado');
+
+  ruletaBadge.className = 'ruleta-badge ' + contexto;
+  ruletaBadge.textContent = cercano ? `👥 Junto a ${cercano.nombre}` : '👤 En solitario';
+  ruletaTitulo.textContent = cercano ? 'Gestos en compañía' : 'Gestos en solitario';
+  ruletaDesc.textContent = cercano ? `Interactúa directamente con ${cercano.nombre}` : 'Expresiones y movimientos individuales';
+
+  iconoCentro.textContent = cercano ? '👋' : '✨';
+  nombreCentro.textContent = 'Elige un gesto';
+  subCentro.textContent = 'Presiona 1-6 o haz clic';
+
+  construirRuletaSvg(lista, contexto);
+
+  ruletaOverlay.classList.add('abierta');
+  ruletaAbierta = true;
+}
+
+function cerrarRuleta() {
+  ruletaOverlay.classList.remove('abierta');
+  ruletaAbierta = false;
+}
+
+function toggleRuleta() {
+  if (ruletaAbierta) cerrarRuleta();
+  else abrirRuleta();
+}
+
+function ejecutarGestoDesdeRuleta(indice) {
+  if (indice < 0 || indice >= gestosActuales.length) return;
+  const g = gestosActuales[indice];
+  const cercano = obtenerUsuarioCercano();
+  cerrarRuleta();
+  iniciarGesto(yo, g, { objetivo: cercano?.nombre, objetivoPersona: cercano?.persona });
+}
+
+ruletaOverlay.addEventListener('click', (e) => {
+  if (e.target === ruletaOverlay) cerrarRuleta();
+});
+if (botonGestos) {
+  botonGestos.addEventListener('click', () => {
+    toggleRuleta();
+    botonGestos.blur();
+  });
 }
 
 // ---------- vistas: isometrica, tercera y primera persona ----------
 const MODOS = ['iso', 'tercera', 'primera'];
 const NOMBRE_MODO = { iso: 'Isométrica', tercera: 'Tercera persona', primera: 'Primera persona' };
 const AYUDA_MODO = {
-  iso: 'Clic en el piso: caminas · clic en un agente: vas a verlo · arrastra: mueves la vista · rueda: zoom · V: cambiar vista',
-  tercera: 'Clic: mirar con el mouse · W A S D: caminar (Shift corre) · E: hablar · Esc: soltar el mouse · V: cambiar vista',
-  primera: 'Clic: mirar con el mouse · W A S D: caminar (Shift corre) · E: hablar · Esc: soltar el mouse · V: cambiar vista',
+  iso: 'Clic en el piso: caminas · clic en un agente: vas a verlo · arrastra: mueves la vista · rueda: zoom · V: cambiar vista · G: gestos',
+  tercera: 'Clic: mirar con el mouse · W A S D: caminar (Shift corre) · E: hablar · Esc: soltar el mouse · V: cambiar vista · G: gestos',
+  primera: 'Clic: mirar con el mouse · W A S D: caminar (Shift corre) · E: hablar · Esc: soltar el mouse · V: cambiar vista · G: gestos',
 };
 const camPersona = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.1, 140);
 // Niebla siempre puesta (quitarla y ponerla recompila los shaders = tiron);
@@ -1009,6 +1534,7 @@ let cercano = null;
 
 function cambiarModo(nuevo) {
   modo = nuevo;
+  if (ruletaAbierta) cerrarRuleta();
   const iso = modo === 'iso';
   camara = iso ? camera : camPersona;
   controls.enabled = iso;
@@ -1041,6 +1567,24 @@ botonModo.addEventListener('click', () => {
 
 addEventListener('keydown', (e) => {
   if (e.target.closest && e.target.closest('input, select, textarea')) return;
+  if (e.code === 'KeyG' && !e.repeat) {
+    e.preventDefault();
+    toggleRuleta();
+    return;
+  }
+  if (ruletaAbierta) {
+    if (e.code === 'Escape') {
+      e.preventDefault();
+      cerrarRuleta();
+      return;
+    }
+    const num = parseInt(e.key, 10);
+    if (num >= 1 && num <= 6) {
+      e.preventDefault();
+      ejecutarGestoDesdeRuleta(num - 1);
+      return;
+    }
+  }
   if (e.code === 'KeyV' && !e.repeat) botonModo.click();
   if (e.code === 'KeyE' && !e.repeat && modo !== 'iso') hablarConCercano();
   teclas.add(e.code);
@@ -1230,7 +1774,7 @@ function htmlConectados() {
 
 // ---------- datos en vivo ----------
 function conectar() {
-  const fuente = new EventSource('/eventos');
+  const fuente = new EventSource(rutaConNombre('/eventos'));
   fuente.onopen = () => {
     conexion.classList.add('ok');
     conexion.textContent = 'En vivo';
@@ -1239,6 +1783,7 @@ function conectar() {
   fuente.addEventListener('jugadores', (m) => sincronizarJugadores(JSON.parse(m.data)));
   fuente.addEventListener('chat', (m) => recibirChat(JSON.parse(m.data)));
   fuente.addEventListener('conectados', (m) => recibirConectados(JSON.parse(m.data)));
+  fuente.addEventListener('gesto', (m) => recibirGesto(JSON.parse(m.data)));
   fuente.addEventListener('yo', (m) => {
     miNombre = JSON.parse(m.data);
     if (fotoActual.sesiones.length) sincronizar(fotoActual);
@@ -1268,16 +1813,20 @@ function cuadro() {
   ubicarVisitantes();
   for (const p of personas.values()) animarPersona(p, t, dt);
 
+  const gestoYo = actualizarGesto(yo, t, dt);
+
   // Quieto en isometrica, tu avatar voltea hacia quien lo busca (o hacia ti).
   const visita = [...personas.values()].find((p) => p.lugar === 'visita');
-  if (modo === 'iso' && !yoCamina) {
+  if (modo === 'iso' && !yoCamina && !gestoYo) {
     const ref = visita ? visita.g.position.clone().sub(yo.g.position) : camera.position.clone().sub(controls.target);
     let dif = Math.atan2(ref.x, ref.z) - yo.g.rotation.y;
     dif = Math.atan2(Math.sin(dif), Math.cos(dif));
     yo.g.rotation.y += dif * Math.min(1, dt * 3);
   }
-  yo.brazos[1].rotation.x = suave(yo.brazos[1].rotation.x, visita && !yoCamina ? -0.9 : -0.1, dt, 5);
-  yo.cabeza.rotation.z = Math.sin(t * 0.8) * 0.05;
+  if (!gestoYo) {
+    yo.brazos[1].rotation.x = suave(yo.brazos[1].rotation.x, visita && !yoCamina ? -0.9 : -0.1, dt, 5);
+    yo.cabeza.rotation.z = Math.sin(t * 0.8) * 0.05;
+  }
   if (anillo.visible) {
     const k = (t * 0.8) % 1;
     anillo.scale.setScalar(1 + k * 0.8);

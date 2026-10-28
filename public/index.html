@@ -126,6 +126,51 @@
   .avisito i { width: 8px; height: 8px; border-radius: 50%; }
   @keyframes llegar { from { opacity: 0; translate: 0 -8px; } }
 
+  /* Botón de gestos */
+  #boton-gestos { position: fixed; left: 190px; bottom: 56px; border: 0; border-radius: 999px; padding: 8px 14px; font: inherit; font-size: 13px; font-weight: 800; background: #2b3440; color: #fff; box-shadow: var(--sombra); cursor: pointer; transition: transform 0.15s, background 0.15s; }
+  #boton-gestos:hover { background: #3d4a5c; transform: translateY(-1px); }
+  #boton-gestos:active { transform: translateY(1px); }
+
+  /* Globo de gesto sobre la cabeza de los personajes */
+  .globo-gesto { pointer-events: none; padding: 6px 12px; border-radius: 999px; background: rgba(255, 255, 255, 0.95); box-shadow: var(--sombra); border: 2px solid var(--acento); font-size: 13px; font-weight: 800; color: var(--texto); display: flex; align-items: center; gap: 6px; white-space: nowrap; animation: popGesto 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+  .globo-gesto i { font-style: normal; font-size: 16px; }
+  @keyframes popGesto { from { opacity: 0; translate: 0 8px; scale: 0.8; } to { opacity: 1; translate: 0 0; scale: 1; } }
+
+  /* Modal de la Ruleta de Gestos */
+  #ruleta-overlay { position: fixed; inset: 0; z-index: 100; display: none; align-items: center; justify-content: center; background: rgba(18, 24, 32, 0.55); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+  #ruleta-overlay.abierta { display: flex; animation: aparecerRuleta 0.2s ease-out; }
+  @keyframes aparecerRuleta { from { opacity: 0; } to { opacity: 1; } }
+
+  .ruleta-panel { position: relative; width: 440px; display: flex; flex-direction: column; align-items: center; user-select: none; }
+  .ruleta-header { text-align: center; margin-bottom: 12px; }
+  .ruleta-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 999px; font-size: 11px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; box-shadow: var(--sombra); }
+  .ruleta-badge.solo { color: #2563eb; background: #e0edff; border: 1px solid #bfdbfe; }
+  .ruleta-badge.acompanado { color: #d9480f; background: #ffe8cc; border: 1px solid #ffd8a8; }
+  .ruleta-header h2 { margin: 6px 0 2px; font-size: 22px; font-weight: 800; color: #ffffff; text-shadow: 0 2px 8px rgba(0,0,0,0.45); }
+  .ruleta-header p { margin: 0; font-size: 12px; color: rgba(255, 255, 255, 0.85); text-shadow: 0 1px 4px rgba(0,0,0,0.3); }
+
+  .ruleta-rueda { position: relative; width: 340px; height: 340px; }
+  .ruleta-svg { width: 100%; height: 100%; overflow: visible; }
+  
+  .sector-path { fill: rgba(255, 255, 255, 0.9); stroke: rgba(255, 255, 255, 0.98); stroke-width: 2px; cursor: pointer; transition: fill 0.15s ease, stroke 0.15s ease, filter 0.15s ease; filter: drop-shadow(0 4px 12px rgba(0,0,0,0.18)); }
+  .ruleta-sector:hover .sector-path, .ruleta-sector.seleccionado .sector-path { fill: #ffffff; stroke: var(--acento); stroke-width: 3px; filter: drop-shadow(0 0 14px rgba(255, 122, 89, 0.7)); }
+  .ruleta-panel.solo .ruleta-sector:hover .sector-path, .ruleta-panel.solo .ruleta-sector.seleccionado .sector-path { stroke: #3b82f6; filter: drop-shadow(0 0 14px rgba(59, 130, 246, 0.7)); }
+  
+  .sector-numero { font-size: 10px; font-weight: 800; fill: #7a8b98; pointer-events: none; }
+  .sector-icono { font-size: 24px; pointer-events: none; text-anchor: middle; dominant-baseline: central; }
+  .sector-nombre { font-size: 11px; font-weight: 800; fill: #2b3440; pointer-events: none; text-anchor: middle; dominant-baseline: central; font-family: 'Nunito', system-ui, sans-serif; }
+  .ruleta-sector:hover .sector-nombre, .ruleta-sector.seleccionado .sector-nombre { fill: var(--acento); }
+  .ruleta-panel.solo .ruleta-sector:hover .sector-nombre, .ruleta-panel.solo .ruleta-sector.seleccionado .sector-nombre { fill: #2563eb; }
+
+  /* Centro informativo de la ruleta */
+  .ruleta-centro { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 116px; height: 116px; border-radius: 50%; background: #ffffff; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.22); border: 3px solid rgba(255, 255, 255, 0.9); display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: none; text-align: center; padding: 6px; box-sizing: border-box; }
+  .ruleta-centro-icono { font-size: 28px; line-height: 1; margin-bottom: 2px; }
+  .ruleta-centro-titulo { font-size: 12px; font-weight: 800; color: #2b3440; line-height: 1.1; max-width: 104px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ruleta-centro-sub { font-size: 10px; font-weight: 700; color: var(--suave); margin-top: 2px; }
+
+  .ruleta-ayuda { margin-top: 14px; font-size: 12px; font-weight: 700; color: rgba(255, 255, 255, 0.9); display: flex; gap: 14px; text-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+  .ruleta-ayuda kbd { padding: 2px 7px; border-radius: 6px; background: rgba(255, 255, 255, 0.25); color: #fff; font-family: inherit; font-size: 11px; }
+
   #panel.plegado { bottom: auto; }
   #panel.plegado #lista, #panel.plegado #detalle { display: none; }
 
@@ -133,6 +178,8 @@
     #panel { top: auto; left: 16px; right: 16px; width: auto; max-height: 45vh; }
     #titulo { display: none; }
     #chat { bottom: auto; top: 64px; }
+    #boton-gestos { left: 160px; }
+    .ruleta-rueda { width: 300px; height: 300px; }
   }
 </style>
 <script type="importmap">
@@ -147,15 +194,40 @@
   <button id="aviso" type="button"></button>
   <div id="avisos" aria-live="polite"></div>
   <div id="vacio"><b>Nadie trabajando por ahora</b><span>Abre Claude Code en cualquier proyecto y aquí aparecerá su escritorio.</span></div>
-  <div id="titulo">Clic en el piso: caminas · clic en un agente: vas a verlo · arrastra: mueves la vista · rueda: zoom · V: cambiar vista</div>
+  <div id="titulo">Clic en el piso: caminas · clic en un agente: vas a verlo · arrastra: mueves la vista · rueda: zoom · V: cambiar vista · G: gestos</div>
   <div id="tarjeta" role="dialog" aria-live="polite"></div>
   <button id="modo" type="button" title="Cambiar vista (V)">Vista: Isométrica</button>
+  <button id="boton-gestos" type="button" title="Ruleta de gestos (G)">Gestos (G)</button>
   <div id="accion" aria-live="polite"></div>
   <form id="chat">
     <ol id="mensajes" aria-live="polite"></ol>
     <input id="escribir" maxlength="200" autocomplete="off" placeholder="Enter para escribir en el chat" aria-label="Mensaje para el chat">
   </form>
   <div id="mira"></div>
+
+  <!-- Ruleta de gestos -->
+  <div id="ruleta-overlay" role="dialog" aria-label="Ruleta de gestos">
+    <div class="ruleta-panel" id="ruleta-panel">
+      <div class="ruleta-header">
+        <span class="ruleta-badge" id="ruleta-badge">👤 En solitario</span>
+        <h2 id="ruleta-titulo">Ruleta de Gestos</h2>
+        <p id="ruleta-desc">Selecciona un gesto para expresarte</p>
+      </div>
+      <div class="ruleta-rueda">
+        <svg class="ruleta-svg" viewBox="-160 -160 320 320" id="ruleta-svg"></svg>
+        <div class="ruleta-centro" id="ruleta-centro">
+          <span class="ruleta-centro-icono" id="ruleta-icono-centro">✨</span>
+          <span class="ruleta-centro-titulo" id="ruleta-nombre-centro">Gestos</span>
+          <span class="ruleta-centro-sub" id="ruleta-sub-centro">Presiona 1-6 o clic</span>
+        </div>
+      </div>
+      <div class="ruleta-ayuda">
+        <span><kbd>G</kbd> o <kbd>Esc</kbd> Cerrar</span>
+        <span><kbd>1</kbd> - <kbd>6</kbd> Selección rápida</span>
+      </div>
+    </div>
+  </div>
+
   <aside id="panel">
     <header>
       <h1>Oficina de agentes</h1>

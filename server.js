@@ -54,6 +54,10 @@ function emitirJugadores() {
 setInterval(emitirJugadores, 3000);
 // Desde el tunel, Cloudflare Access pone el correo de quien entro; de ahi sale su nombre y no se puede inventar.
 function nombreDeVisita(req) {
+  try {
+    const q = new URL(req.url, 'http://localhost').searchParams.get('nombre');
+    if (q) return q.trim().slice(0, 30);
+  } catch {}
   if (!esRemoto(req)) return NOMBRE || 'Anfitrión';
   const correo = String(req.headers['cf-access-authenticated-user-email'] || '').toLowerCase();
   return CORREOS.get(correo) || correo.split('@')[0];
@@ -117,9 +121,17 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (req.method === 'POST' && (url === '/posicion' || url === '/chat')) {
+  if (req.method === 'POST' && (url === '/posicion' || url === '/chat' || url === '/gesto')) {
     const nombre = nombreDeVisita(req);
     if (!nombre) return res.writeHead(403).end();
+    if (url === '/gesto') {
+      return leerJson(req, res, 1000, ({ id, gesto, objetivo }) => {
+        if (typeof id === 'string' && typeof gesto === 'string' && gesto.length <= 40) {
+          const datos = `event: gesto\ndata: ${JSON.stringify({ id: id.slice(0, 40), nombre, gesto, objetivo: objetivo ? String(objetivo).slice(0, 50) : null, t: Date.now() })}\n\n`;
+          for (const c of clientes.keys()) c.write(datos);
+        }
+      });
+    }
     if (url === '/chat') {
       return leerJson(req, res, 2000, ({ id, texto }) => {
         texto = String(texto || '').trim().slice(0, 200);
