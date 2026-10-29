@@ -1774,8 +1774,11 @@ function htmlConectados() {
 
 // ---------- datos en vivo ----------
 function conectar() {
-  const fuente = new EventSource(rutaConNombre('/eventos'));
+  // Con tu id, el servidor borra tu avatar en cuanto se cierra esta pagina (si no, al recargar quedaba un clon unos segundos).
+  const ruta = rutaConNombre('/eventos');
+  const fuente = new EventSource(`${ruta}${ruta.includes('?') ? '&' : '?'}id=${miId}`);
   fuente.onopen = () => {
+    ultimoEnvio = -Infinity; // si se corto y volvio, reaparece ya sin esperar al siguiente envio
     conexion.classList.add('ok');
     conexion.textContent = 'En vivo';
   };

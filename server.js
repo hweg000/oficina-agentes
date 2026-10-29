@@ -151,6 +151,7 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
     const f = foto(oficina);
     const nombre = nombreDeVisita(req);
+    const id = String(new URL(req.url, 'http://localhost').searchParams.get('id') || '').slice(0, 40);
     res.write(`event: yo\ndata: ${JSON.stringify(nombre)}\n\n`);
     res.write(`event: chat\ndata: ${JSON.stringify(chat)}\n\n`);
     res.write(`data: ${JSON.stringify(remoto ? publica(f) : f)}\n\n`);
@@ -162,6 +163,7 @@ const server = http.createServer((req, res) => {
       clientes.delete(res);
       conectados.delete(res);
       emitirConectados();
+      if (id && jugadores.delete(`${nombre}:${id}`)) emitirJugadores();
     });
     return;
   }
