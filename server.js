@@ -79,17 +79,24 @@ function mandarChat(m) {
   for (const res of clientes.keys()) res.write(datos);
 }
 
-// La skin la manda el navegador de cada quien: solo pasan colores #rrggbb y accesorios conocidos.
-const ACCESORIOS = ['', 'gorra', 'sombrero', 'lentes', 'corona'];
+// La skin la manda el navegador de cada quien: solo pasan colores #rrggbb y opciones conocidas (las mismas que en oficina.js).
+const OPCIONES_SKIN = {
+  complexion: ['delgado', 'normal', 'robusto'],
+  peinado: ['corto', 'largo', 'cola', 'chongo', 'mohawk', 'afro', 'calvo'],
+  ojos: ['normal', 'felices', 'serios', 'grandes'],
+  barba: ['', 'bigote', 'candado', 'barba'],
+  ropa: ['playera', 'sudadera', 'saco'],
+  lentes: ['', 'lentes', 'oscuros'],
+  accesorio: ['', 'gorra', 'gorro', 'sombrero', 'corona', 'audifonos', 'cuernos', 'lentes'], // 'lentes': skins de la version anterior
+};
 function limpiarSkin(s) {
   if (!s || typeof s !== 'object') return null;
   const r = {};
-  for (const k of ['camisa', 'pantalon', 'piel', 'pelo']) {
-    if (!/^#[0-9a-f]{6}$/i.test(s[k])) return null;
-    r[k] = s[k];
-  }
-  r.accesorio = ACCESORIOS.includes(s.accesorio) ? s.accesorio : '';
-  return r;
+  for (const k of ['camisa', 'pantalon', 'zapatos', 'piel', 'pelo', 'detalle']) if (/^#[0-9a-f]{6}$/i.test(s[k])) r[k] = s[k];
+  for (const [k, validas] of Object.entries(OPCIONES_SKIN)) if (validas.includes(s[k])) r[k] = s[k];
+  const altura = Number(s.altura);
+  if (altura >= 0.9 && altura <= 1.1) r.altura = altura;
+  return r; // lo que falte, el navegador lo pone con sus valores de base
 }
 
 function leerJson(req, res, max, usar) {
@@ -151,7 +158,7 @@ const server = http.createServer((req, res) => {
         if (texto) mandarChat({ id: String(id || '').slice(0, 40), nombre, texto, t: Date.now() });
       });
     }
-    return leerJson(req, res, 1000, ({ id, x, y, z, ry, mapa, skin }) => {
+    return leerJson(req, res, 2000, ({ id, x, y, z, ry, mapa, skin }) => {
       const n = [x, y, z, ry].map(Number);
       if (typeof id === 'string' && id.length <= 40 && n.every((v) => Number.isFinite(v) && Math.abs(v) < 500)) {
         // Cada quien elige su mapa: las coordenadas solo valen entre quienes ven el mismo.

@@ -454,9 +454,11 @@ function crearPersona(color, { ayudante = false, semillaId = '' } = {}) {
   const piel = PIELES[h % PIELES.length];
   const pelo = PELOS[(h >> 3) % PELOS.length];
   const g = new THREE.Group();
+  const cuerpo = new THREE.Group(); // lo que crece con la estatura (la sombra y la etiqueta no)
+  g.add(cuerpo);
   const cadera = new THREE.Group();
   cadera.position.y = 0.47;
-  g.add(cadera);
+  cuerpo.add(cadera);
   const sombra = new THREE.Mesh(sombraGeo, sombraMat);
   sombra.rotation.x = -Math.PI / 2;
   sombra.position.y = 0.02;
@@ -465,13 +467,16 @@ function crearPersona(color, { ayudante = false, semillaId = '' } = {}) {
   // Lo que se puede recolorear con una skin (ver vestir).
   const ropa = [];
   const pantalon = [];
+  const zapatos = [];
   const pieles = [];
   const piernas = [-0.1, 0.1].map((x) => {
     const p = new THREE.Group();
     p.position.x = x;
-    p.add(caja(0.14, 0.46, 0.15, '#3d4a5c', 0, -0.23, 0));
-    pantalon.push(p.children[0]);
-    p.add(caja(0.15, 0.08, 0.22, '#2a2f38', 0, -0.44, 0.04));
+    const pierna = caja(0.14, 0.46, 0.15, '#3d4a5c', 0, -0.23, 0);
+    const zapato = caja(0.15, 0.08, 0.22, '#2a2f38', 0, -0.44, 0.04);
+    p.add(pierna, zapato);
+    pantalon.push(pierna);
+    zapatos.push(zapato);
     cadera.add(p);
     return p;
   });
@@ -481,6 +486,8 @@ function crearPersona(color, { ayudante = false, semillaId = '' } = {}) {
   const cuello = malla(new THREE.CylinderGeometry(0.08, 0.1, 0.08, 6), piel, 0, 0.6, 0);
   cadera.add(cuello);
   pieles.push(cuello);
+  const prenda = new THREE.Group(); // capucha, saco y corbata
+  cadera.add(prenda);
 
   const cabeza = new THREE.Group();
   cabeza.position.y = 0.78;
@@ -488,15 +495,23 @@ function crearPersona(color, { ayudante = false, semillaId = '' } = {}) {
   const cara = malla(new THREE.IcosahedronGeometry(0.22, 1), piel);
   cabeza.add(cara);
   pieles.push(cara);
+  const peinado = new THREE.Group();
+  cabeza.add(peinado);
   const cabello = malla(new THREE.SphereGeometry(0.235, 8, 5, 0, Math.PI * 2, 0, Math.PI / 2), pelo, 0, 0.02, -0.02);
   cabello.rotation.x = -0.25;
-  cabeza.add(cabello);
-  for (const x of [-0.08, 0.08]) cabeza.add(caja(0.045, 0.06, 0.02, '#262a31', x, 0.0, 0.205));
+  peinado.add(cabello);
+  const ojos = new THREE.Group();
+  cabeza.add(ojos);
+  for (const x of [-0.08, 0.08]) ojos.add(caja(0.045, 0.06, 0.02, '#262a31', x, 0.0, 0.205));
   if (ayudante) {
     const gorra = color;
     cabeza.add(malla(new THREE.CylinderGeometry(0.235, 0.235, 0.1, 8), gorra, 0, 0.14, 0));
     cabeza.add(caja(0.3, 0.03, 0.18, gorra, 0, 0.1, 0.2));
   }
+  const barba = new THREE.Group();
+  const lentes = new THREE.Group();
+  const accesorio = new THREE.Group();
+  cabeza.add(barba, lentes, accesorio);
 
   const brazos = [-0.28, 0.28].map((x) => {
     const b = new THREE.Group();
@@ -516,40 +531,121 @@ function crearPersona(color, { ayudante = false, semillaId = '' } = {}) {
   puntos.visible = false;
   g.add(puntos);
 
-  const accesorio = new THREE.Group();
-  cabeza.add(accesorio);
-
   if (ayudante) g.scale.setScalar(0.85);
-  return { g, cadera, piernas, brazos, cabeza, puntos, ropa, pantalon, pieles, cabello, accesorio };
+  return { g, cuerpo, cadera, piernas, brazos, cabeza, puntos, torso, ropa, pantalon, zapatos, pieles, prenda, peinado, ojos, barba, lentes, accesorio };
 }
 
-// Skin: colores y un accesorio que cada quien elige en el menu de inicio y viaja con su posicion.
-const ACCESORIOS = { '': 'Nada', gorra: 'Gorra', sombrero: 'Sombrero', lentes: 'Lentes', corona: 'Corona' };
-function vestir(c, skin) {
-  for (const m of c.ropa) m.material = mat(skin.camisa);
-  for (const m of c.pantalon) m.material = mat(skin.pantalon);
-  for (const m of c.pieles) m.material = mat(skin.piel);
-  c.cabello.material = mat(skin.pelo);
-  c.accesorio.clear();
+// Skin: lo que cada quien arma en el editor de personaje; viaja con su posicion y el servidor la valida (limpiarSkin).
+// Las listas de opciones tienen que coincidir con las de server.js.
+const OPCIONES_SKIN = {
+  complexion: { delgado: 'Delgado', normal: 'Normal', robusto: 'Robusto' },
+  peinado: { corto: 'Corto', largo: 'Largo', cola: 'Cola', chongo: 'Chongo', mohawk: 'Mohawk', afro: 'Afro', calvo: 'Calvo' },
+  ojos: { normal: 'Normal', felices: 'Felices', serios: 'Serios', grandes: 'Grandes' },
+  barba: { '': 'Nada', bigote: 'Bigote', candado: 'Candado', barba: 'Barba' },
+  ropa: { playera: 'Playera', sudadera: 'Sudadera', saco: 'Saco y corbata' },
+  lentes: { '': 'Nada', lentes: 'Lentes', oscuros: 'Oscuros' },
+  accesorio: { '': 'Nada', gorra: 'Gorra', gorro: 'Gorro', sombrero: 'Sombrero', corona: 'Corona', audifonos: 'Audífonos', cuernos: 'Cuernos' },
+};
+const SKIN_BASE = {
+  camisa: '#f2b134', pantalon: '#3d4a5c', zapatos: '#2a2f38', piel: PIELES[0], pelo: PELOS[0], detalle: '#d64545',
+  complexion: 'normal', altura: 1, peinado: 'corto', ojos: 'normal', barba: '', ropa: 'playera', lentes: '', accesorio: '',
+};
+const ANCHO = { delgado: 0.85, normal: 1, robusto: 1.22 };
+function vestir(c, skinParcial) {
+  const s = { ...SKIN_BASE, ...skinParcial };
+  if (s.accesorio === 'lentes') [s.accesorio, s.lentes] = ['', 'lentes']; // skins de la version anterior
+  for (const m of c.ropa) m.material = mat(s.camisa);
+  for (const m of c.pantalon) m.material = mat(s.pantalon);
+  for (const m of c.zapatos) m.material = mat(s.zapatos);
+  for (const m of c.pieles) m.material = mat(s.piel);
+  // shortcut: las piezas viejas no se liberan (dispose); solo se rehacen al cambiar la skin.
+  for (const grupo of [c.prenda, c.peinado, c.ojos, c.barba, c.lentes, c.accesorio]) grupo.clear();
+
+  const ancho = ANCHO[s.complexion] || 1;
+  c.torso.scale.set(ancho, 1, ancho);
+  c.brazos[0].position.x = -0.28 * (0.3 + 0.7 * ancho);
+  c.brazos[1].position.x = 0.28 * (0.3 + 0.7 * ancho);
+  c.cuerpo.scale.setScalar(Math.min(1.1, Math.max(0.9, Number(s.altura) || 1)));
+
+  const p = c.peinado;
+  if (s.peinado === 'afro') p.add(malla(new THREE.IcosahedronGeometry(0.31, 1), s.pelo, 0, 0.08, -0.05));
+  else if (s.peinado === 'mohawk') p.add(caja(0.07, 0.16, 0.42, s.pelo, 0, 0.24, -0.02));
+  else if (s.peinado !== 'calvo') {
+    const m = malla(new THREE.SphereGeometry(0.235, 8, 5, 0, Math.PI * 2, 0, Math.PI / 2), s.pelo, 0, 0.02, -0.02);
+    m.rotation.x = -0.25;
+    p.add(m);
+  }
+  if (s.peinado === 'largo') p.add(caja(0.42, 0.4, 0.1, s.pelo, 0, -0.12, -0.17));
+  if (s.peinado === 'cola') p.add(malla(new THREE.CylinderGeometry(0.05, 0.03, 0.3, 6), s.pelo, 0, -0.08, -0.27));
+  if (s.peinado === 'chongo') p.add(malla(new THREE.IcosahedronGeometry(0.11, 0), s.pelo, 0, 0.2, -0.16));
+
+  const o = c.ojos;
+  for (const x of [-0.08, 0.08]) {
+    if (s.ojos === 'felices') o.add(caja(0.06, 0.02, 0.02, '#262a31', x, 0.01, 0.205));
+    else if (s.ojos === 'serios') o.add(caja(0.05, 0.035, 0.02, '#262a31', x, 0.0, 0.205), caja(0.08, 0.02, 0.02, s.pelo, x, 0.06, 0.205));
+    else if (s.ojos === 'grandes') o.add(caja(0.08, 0.09, 0.02, '#ffffff', x, 0.0, 0.2), caja(0.04, 0.05, 0.02, '#262a31', x, -0.01, 0.212));
+    else o.add(caja(0.045, 0.06, 0.02, '#262a31', x, 0.0, 0.205));
+  }
+
+  const b = c.barba;
+  if (s.barba === 'bigote' || s.barba === 'candado') b.add(caja(0.14, 0.035, 0.03, s.pelo, 0, -0.07, 0.2));
+  if (s.barba === 'candado') b.add(caja(0.07, 0.08, 0.04, s.pelo, 0, -0.15, 0.18));
+  if (s.barba === 'barba') {
+    const m = malla(new THREE.SphereGeometry(0.2, 8, 4, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), s.pelo, 0, -0.04, 0.03);
+    m.scale.set(1, 0.8, 1);
+    b.add(m);
+  }
+
+  const r = c.prenda;
+  if (s.ropa === 'sudadera') {
+    const capucha = malla(new THREE.TorusGeometry(0.15, 0.06, 5, 10, Math.PI), s.camisa, 0, 0.56, -0.12);
+    capucha.rotation.set(-0.5, 0, Math.PI);
+    r.add(capucha, caja(0.24, 0.12, 0.03, s.detalle, 0, 0.12, 0.25 * ancho));
+  } else if (s.ropa === 'saco') {
+    r.add(caja(0.12, 0.38, 0.03, '#f4f4f4', 0, 0.36, 0.215 * ancho)); // camisa blanca
+    r.add(caja(0.05, 0.3, 0.035, s.detalle, 0, 0.36, 0.225 * ancho)); // corbata
+  }
+
+  if (s.lentes) {
+    const color = s.lentes === 'oscuros' ? '#11151b' : '#1b1f26';
+    const [w, alto] = s.lentes === 'oscuros' ? [0.13, 0.07] : [0.11, 0.08];
+    for (const x of [-0.08, 0.08]) c.lentes.add(caja(w, alto, 0.02, color, x, 0.0, 0.215));
+    c.lentes.add(caja(0.06, 0.02, 0.02, color, 0, 0.02, 0.215));
+  }
+
   const a = c.accesorio;
-  if (skin.accesorio === 'gorra') {
-    a.add(malla(new THREE.CylinderGeometry(0.235, 0.235, 0.1, 8), skin.camisa, 0, 0.14, 0));
-    a.add(caja(0.3, 0.03, 0.18, skin.camisa, 0, 0.1, 0.2));
-  } else if (skin.accesorio === 'sombrero') {
+  a.position.y = s.peinado === 'afro' ? 0.1 : s.peinado === 'mohawk' ? 0.05 : 0; // que no se hunda en el pelo
+  if (s.accesorio === 'gorra') {
+    a.add(malla(new THREE.CylinderGeometry(0.235, 0.235, 0.1, 8), s.detalle, 0, 0.14, 0));
+    a.add(caja(0.3, 0.03, 0.18, s.detalle, 0, 0.1, 0.2));
+  } else if (s.accesorio === 'gorro') {
+    a.add(malla(new THREE.SphereGeometry(0.245, 8, 5, 0, Math.PI * 2, 0, Math.PI / 2), s.detalle, 0, 0.05, 0));
+    a.add(malla(new THREE.IcosahedronGeometry(0.06, 0), '#f4f4f4', 0, 0.32, 0));
+  } else if (s.accesorio === 'sombrero') {
     a.add(malla(new THREE.CylinderGeometry(0.38, 0.38, 0.03, 12), '#3b2f2a', 0, 0.15, 0));
     a.add(malla(new THREE.CylinderGeometry(0.2, 0.22, 0.22, 10), '#3b2f2a', 0, 0.27, 0));
-  } else if (skin.accesorio === 'lentes') {
-    for (const x of [-0.08, 0.08]) a.add(caja(0.11, 0.08, 0.02, '#1b1f26', x, 0.0, 0.215));
-    a.add(caja(0.06, 0.02, 0.02, '#1b1f26', 0, 0.02, 0.215));
-  } else if (skin.accesorio === 'corona') {
+  } else if (s.accesorio === 'corona') {
     a.add(malla(new THREE.CylinderGeometry(0.17, 0.16, 0.1, 8, 1, true), '#f2c230', 0, 0.22, 0));
     for (let i = 0; i < 5; i++) {
       const ang = (i / 5) * Math.PI * 2;
       a.add(malla(new THREE.ConeGeometry(0.04, 0.09, 4), '#f2c230', Math.sin(ang) * 0.16, 0.31, Math.cos(ang) * 0.16));
     }
+  } else if (s.accesorio === 'audifonos') {
+    a.position.y = 0; // van a los lados, no encima
+    a.add(malla(new THREE.TorusGeometry(0.25, 0.025, 4, 12, Math.PI), '#2b3440', 0, 0.02, 0));
+    for (const x of [-0.24, 0.24]) {
+      const copa = malla(new THREE.CylinderGeometry(0.08, 0.08, 0.06, 10), s.detalle, x, 0.0, 0);
+      copa.rotation.z = Math.PI / 2;
+      a.add(copa);
+    }
+  } else if (s.accesorio === 'cuernos') {
+    for (const x of [-0.12, 0.12]) {
+      const cuerno = malla(new THREE.ConeGeometry(0.05, 0.16, 5), '#b3261e', x, 0.24, 0.02);
+      cuerno.rotation.z = -x * 2;
+      a.add(cuerno);
+    }
   }
 }
-const SKIN_BASE = { camisa: '#f2b134', pantalon: '#3d4a5c', piel: PIELES[0], pelo: PELOS[0], accesorio: '' };
 let miSkin = { ...SKIN_BASE };
 try {
   Object.assign(miSkin, JSON.parse(localStorage.getItem('oficina-skin')) || {});
@@ -1113,8 +1209,10 @@ tarjeta.addEventListener('click', (e) => {
 // Tu avatar camina hacia un punto (clic en el piso) o hacia un agente.
 let yoDestino = null;
 let yoBusca = null; // agente al que vas a ver
+let yoRuta = []; // puntos que siguen despues de yoDestino (ruta del minimapa)
 function caminarA(punto, agente = null) {
   yoDestino = punto.clone();
+  yoRuta = [];
   yoBusca = agente;
   tarjeta.classList.remove('si');
   marca.position.set(punto.x, punto.y + 0.03, punto.z);
@@ -1181,8 +1279,8 @@ function moverYo(t, dt) {
     const paso = 3.6 * dt;
     if (dist <= paso) {
       yo.g.position.copy(yoDestino);
-      yoDestino = null;
-      if (yoBusca) {
+      yoDestino = yoRuta.shift() || null;
+      if (!yoDestino && yoBusca) {
         seleccionar(yoBusca.id, { mover: false });
         if (yoBusca.sesion.espera && quienVisita(yoBusca.sesion) === yoBusca.id) abrirTarjeta(yoBusca);
         else if (yoBusca.sesion.espera && yoBusca.sesion.espera.tipo === 'mensaje' && !yoBusca.ayudante) abrirTarjeta(yoBusca);
@@ -2837,6 +2935,18 @@ const ayuda = document.getElementById('titulo');
 const accion = document.getElementById('accion');
 let cercano = null;
 
+// Los controles se muestran como lista "tecla: que hace" en la tarjeta de Controles.
+function pintarAyuda() {
+  ayuda.innerHTML = AYUDA_MODO[modo]
+    .split(' · ')
+    .map((t) => {
+      const [tecla, que] = t.split(': ');
+      return `<li><b>${esc(tecla)}</b><span>${esc(que)}</span></li>`;
+    })
+    .join('');
+}
+pintarAyuda();
+
 function cambiarModo(nuevo) {
   modo = nuevo;
   if (ruletaAbierta) cerrarRuleta();
@@ -2862,7 +2972,7 @@ function cambiarModo(nuevo) {
   etiquetaYo.visible = yo.g.visible; // CSS2D no hereda la visibilidad del padre
   document.body.dataset.modo = modo;
   botonModo.textContent = `Vista: ${NOMBRE_MODO[modo]}`;
-  ayuda.textContent = AYUDA_MODO[modo];
+  pintarAyuda();
 }
 // Cambiar de mapa recarga la pagina: cada mapa arma su mundo desde cero.
 const botonMapa = document.getElementById('boton-mapa');
@@ -2951,6 +3061,104 @@ function alturaEn(x, z) {
     if (Math.abs(local.x) <= MITAD && Math.abs(local.z) <= MITAD) return 0.25;
   }
   return Math.hypot(x, z) < 4.9 ? 0.18 : 0;
+}
+
+// Ruta que esquiva paredes, escritorios y edificios: A* en una rejilla de medio metro
+// y luego se quitan los puntos intermedios que se pueden saltar en linea recta.
+function despejado(a, b) {
+  const n = Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / 0.2);
+  for (let k = 1; k <= n; k++) if (choca(a.x + ((b.x - a.x) * k) / n, a.z + ((b.z - a.z) * k) / n)) return false;
+  return true;
+}
+function buscarRuta(desde, hasta) {
+  const P = 0.5;
+  const M = 14; // margen alrededor para poder rodear
+  const x0 = Math.min(desde.x, hasta.x) - M;
+  const z0 = Math.min(desde.z, hasta.z) - M;
+  const ancho = Math.ceil((Math.abs(desde.x - hasta.x) + 2 * M) / P) + 1;
+  const alto = Math.ceil((Math.abs(desde.z - hasta.z) + 2 * M) / P) + 1;
+  const indice = (x, z) => Math.round((z - z0) / P) * ancho + Math.round((x - x0) / P);
+  const xDe = (k) => x0 + (k % ancho) * P;
+  const zDe = (k) => z0 + Math.floor(k / ancho) * P;
+  const memo = new Map();
+  const libre = (k) => {
+    if (!memo.has(k)) memo.set(k, !choca(xDe(k), zDe(k)));
+    return memo.get(k);
+  };
+  const inicio = indice(desde.x, desde.z);
+  memo.set(inicio, true); // aunque estes pegado a una pared, de ahi sales
+  // Si el destino cae dentro de algo, el punto libre mas cercano.
+  let meta = indice(hasta.x, hasta.z);
+  for (let r = 1; !libre(meta) && r < 12; r++) {
+    const [gi, gj] = [Math.round((hasta.x - x0) / P), Math.round((hasta.z - z0) / P)];
+    for (let a = 0; a < 16 && !libre(meta); a++) {
+      const [i, j] = [gi + Math.round(Math.cos((a / 16) * Math.PI * 2) * r), gj + Math.round(Math.sin((a / 16) * Math.PI * 2) * r)];
+      if (i >= 0 && j >= 0 && i < ancho && j < alto) meta = j * ancho + i;
+    }
+  }
+  if (!libre(meta)) return null;
+
+  const g = new Float32Array(ancho * alto).fill(Infinity);
+  const de = new Int32Array(ancho * alto).fill(-1);
+  const h = (k) => Math.hypot(xDe(k) - xDe(meta), zDe(k) - zDe(meta));
+  const monton = [[h(inicio), inicio]]; // monticulo binario por f
+  const sacar = () => {
+    const tope = monton[0];
+    const ultimo = monton.pop();
+    if (monton.length) {
+      monton[0] = ultimo;
+      for (let i = 0; ; ) {
+        const [a, b] = [2 * i + 1, 2 * i + 2];
+        let m = i;
+        if (a < monton.length && monton[a][0] < monton[m][0]) m = a;
+        if (b < monton.length && monton[b][0] < monton[m][0]) m = b;
+        if (m === i) break;
+        [monton[i], monton[m]] = [monton[m], monton[i]];
+        i = m;
+      }
+    }
+    return tope;
+  };
+  const meter = (n) => {
+    monton.push(n);
+    for (let i = monton.length - 1; i > 0; ) {
+      const p = (i - 1) >> 1;
+      if (monton[p][0] <= monton[i][0]) break;
+      [monton[i], monton[p]] = [monton[p], monton[i]];
+      i = p;
+    }
+  };
+  g[inicio] = 0;
+  for (let vueltas = 0; monton.length && vueltas < 60000; vueltas++) {
+    const [, k] = sacar();
+    if (k === meta) break;
+    const [i, j] = [k % ancho, Math.floor(k / ancho)];
+    for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+      const [ni, nj] = [i + di, j + dj];
+      if (ni < 0 || nj < 0 || ni >= ancho || nj >= alto) continue;
+      const n = nj * ancho + ni;
+      if (!libre(n)) continue;
+      if (di && dj && (!libre(j * ancho + ni) || !libre(nj * ancho + i))) continue; // sin cortar esquinas
+      const costo = g[k] + (di && dj ? Math.SQRT2 : 1) * P;
+      if (costo >= g[n]) continue;
+      g[n] = costo;
+      de[n] = k;
+      meter([costo + h(n), n]);
+    }
+  }
+  if (de[meta] < 0 && meta !== inicio) return null;
+  const celdas = [];
+  for (let k = meta; k !== inicio; k = de[k]) celdas.unshift(new THREE.Vector3(xDe(k), 0, zDe(k)));
+  const ruta = [];
+  let ultimo = desde;
+  for (let i = 0; i < celdas.length; i++) {
+    if (i === celdas.length - 1 || !despejado(ultimo, celdas[i + 1])) {
+      ruta.push(celdas[i]);
+      ultimo = celdas[i];
+    }
+  }
+  for (const p of ruta) p.y = alturaEn(p.x, p.z);
+  return ruta;
 }
 
 function moverConTeclas(dt) {
@@ -3122,6 +3330,162 @@ function conectar() {
     conexion.textContent = 'Sin conexión';
   };
 }
+// ---------- barra, controles y minimapa que se pliegan (se recuerda en este navegador) ----------
+function plegable(boton, caja, clave, abiertoPorDefecto) {
+  let abierto = abiertoPorDefecto;
+  try {
+    const guardado = localStorage.getItem(clave);
+    if (guardado !== null) abierto = guardado === '1';
+  } catch {}
+  const poner = (v) => {
+    abierto = v;
+    caja.classList.toggle('plegado', !v);
+    boton.setAttribute('aria-expanded', String(v));
+    try {
+      localStorage.setItem(clave, v ? '1' : '0');
+    } catch {}
+  };
+  poner(abierto);
+  boton.addEventListener('click', () => {
+    poner(!abierto);
+    boton.blur();
+  });
+}
+plegable(document.getElementById('barra-plegar'), document.getElementById('barra'), 'oficina-barra', true);
+plegable(document.getElementById('boton-ayuda'), ayuda, 'oficina-ayuda', false);
+const minimapa = document.getElementById('minimapa');
+plegable(document.getElementById('minimapa-plegar'), minimapa, 'oficina-minimapa', true);
+
+// Minimapa: vista desde arriba girada igual que la camara isometrica (que mira desde +x +z).
+const lienzo = document.getElementById('minimapa-lienzo');
+const LADO = 170;
+lienzo.width = lienzo.height = LADO * devicePixelRatio;
+const ctx = lienzo.getContext('2d');
+ctx.scale(devicePixelRatio, devicePixelRatio);
+let escalaMini = 1;
+const aLienzo = (x, z) => [LADO / 2 + (x - z) * Math.SQRT1_2 * escalaMini, LADO / 2 + (x + z) * Math.SQRT1_2 * escalaMini];
+function punto(x, z, r, relleno, borde) {
+  const [cx, cy] = aLienzo(x, z);
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fillStyle = relleno;
+  ctx.fill();
+  if (borde) {
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = borde;
+    ctx.stroke();
+  }
+}
+// Rectangulo del mundo (x0..x1, z0..z1) dibujado en el minimapa: queda como rombo, igual que en la vista isometrica.
+function rombo(x0, x1, z0, z1, relleno) {
+  ctx.beginPath();
+  for (const [x, z] of [[x0, z0], [x1, z0], [x1, z1], [x0, z1]]) ctx.lineTo(...aLienzo(x, z));
+  ctx.closePath();
+  ctx.fillStyle = relleno;
+  ctx.fill();
+}
+function dibujarMinimapa() {
+  if (minimapa.classList.contains('plegado')) return;
+  // Se aleja lo justo para que quepan todas las salas y tu.
+  let ext = 30;
+  for (const s of salas.values()) ext = Math.max(ext, Math.hypot(s.g.position.x, s.g.position.z) + SALA);
+  ext = Math.max(ext, Math.hypot(yo.g.position.x, yo.g.position.z) + 4);
+  escalaMini = (LADO / 2 - 6) / ext;
+  ctx.clearRect(0, 0, LADO, LADO);
+  if (MAPA === 'isla') {
+    punto(0, 0, 64 * escalaMini, isla.material.color.getStyle());
+    // Placitas de cada barrio (solo hay cuando hay mas de un dueño).
+    if (barrios.size > 1) for (const [dueno, b] of barrios) punto(b.x, b.z, 4.3 * escalaMini, `${COLORES[hash(dueno) % COLORES.length]}66`);
+  } else {
+    ctx.fillStyle = '#7d8792'; // calles
+    ctx.fillRect(0, 0, LADO, LADO);
+    const { celda, lote } = CIUDAD;
+    const ocupadas = new Map([...barrios].map(([dueno, b]) => [b.celda, dueno]));
+    for (const [cx, cz] of [[0, 0], ...CELDAS]) {
+      const [x, z] = [cx * celda, cz * celda];
+      const dueno = ocupadas.get(`${cx},${cz}`);
+      const torre = rellenos.children.find((o) => o.userData.solido && Math.abs(o.position.x - x) < 1 && Math.abs(o.position.z - z) < 1);
+      rombo(x - lote / 2, x + lote / 2, z - lote / 2, z + lote / 2, cx || cz ? (dueno !== undefined || torre ? '#d8dde2' : '#a9cf8f') : '#e7dfd1');
+      if (torre) rombo(...torre.userData.solido, '#aab4bf');
+    }
+    // El edificio de cada dueño, con su color.
+    for (const [dueno, b] of barrios) {
+      if (!b.solidos) continue;
+      const [[x0, , zFondo, zFrente], [, x1]] = b.solidos;
+      rombo(x0, x1, zFondo, zFrente, `${COLORES[hash(dueno) % COLORES.length]}55`);
+    }
+  }
+  for (const a of arboles) if (a.parent && a.visible) punto(a.position.x, a.position.z, 1.6, '#4e8a5c');
+  punto(0, 0, 4.5 * escalaMini, 'rgba(255, 255, 255, 0.7)'); // la plaza
+  for (const s of salas.values()) {
+    const { x, z } = s.g.position;
+    const [c, n] = [Math.cos(s.g.rotation.y), Math.sin(s.g.rotation.y)];
+    ctx.beginPath();
+    for (const [a, b] of [[-MITAD, -MITAD], [MITAD, -MITAD], [MITAD, MITAD], [-MITAD, MITAD]]) ctx.lineTo(...aLienzo(x + a * c + b * n, z - a * n + b * c));
+    ctx.closePath();
+    ctx.fillStyle = s.dueno && s.dueno !== miNombre ? '#e3d6ef' : '#f4e7d6';
+    ctx.fill();
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(43, 52, 64, 0.35)';
+    ctx.stroke();
+  }
+  for (const p of personas.values()) if (p.g.visible) punto(p.g.position.x, p.g.position.z, p.lugar === 'visita' ? 3.5 : 2.2, p.lugar === 'visita' ? '#ff7a59' : p.color);
+  for (const { c } of otros.values()) if (c.g.visible) punto(c.g.position.x, c.g.position.z, 3.5, '#5b8def', '#fff');
+  // La ruta que vas siguiendo, punteada hasta el destino.
+  if (yoDestino) {
+    ctx.beginPath();
+    for (const p of [yo.g.position, yoDestino, ...yoRuta]) ctx.lineTo(...aLienzo(p.x, p.z));
+    ctx.setLineDash([4, 3]);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#ff7a59';
+    ctx.stroke();
+    ctx.setLineDash([]);
+    const fin = yoRuta.at(-1) || yoDestino;
+    punto(fin.x, fin.z, 3.5, '#fff', '#ff7a59');
+  }
+  // Tu, como flecha hacia donde miras.
+  const [cx, cy] = aLienzo(yo.g.position.x, yo.g.position.z);
+  const [fx, fz] = [Math.sin(yo.g.rotation.y), Math.cos(yo.g.rotation.y)];
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(Math.atan2(fx + fz, fx - fz));
+  ctx.beginPath();
+  ctx.moveTo(7, 0);
+  ctx.lineTo(-5, -5);
+  ctx.lineTo(-2, 0);
+  ctx.lineTo(-5, 5);
+  ctx.closePath();
+  ctx.fillStyle = '#2b3440';
+  ctx.fill();
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = '#fff';
+  ctx.stroke();
+  ctx.restore();
+}
+setInterval(dibujarMinimapa, 200);
+// En isometrica, clic en el minimapa lleva la vista a ese punto.
+function puntoDelMinimapa(e) {
+  const caja = lienzo.getBoundingClientRect();
+  const u = ((e.clientX - caja.left) * (LADO / caja.width) - LADO / 2) / (Math.SQRT1_2 * escalaMini); // x - z
+  const v = ((e.clientY - caja.top) * (LADO / caja.height) - LADO / 2) / (Math.SQRT1_2 * escalaMini); // x + z
+  return new THREE.Vector3((u + v) / 2, 0, (v - u) / 2);
+}
+lienzo.addEventListener('click', (e) => {
+  if (modo !== 'iso') return;
+  objetivoCamara = puntoDelMinimapa(e).setY(controls.target.y);
+});
+// Clic derecho: tu muneco camina hasta alla rodeando lo que estorbe, y la ruta se dibuja en el minimapa.
+lienzo.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  const meta = puntoDelMinimapa(e);
+  const ruta = buscarRuta(yo.g.position, meta);
+  if (!ruta || !ruta.length) return;
+  caminarA(ruta.at(-1));
+  yoDestino = ruta[0];
+  yoRuta = ruta.slice(1);
+  dibujarMinimapa();
+});
+
 // ---------- pantalla de inicio: tu muneco al frente y su skin ----------
 const inicio = document.getElementById('inicio');
 const vistaInicio = document.getElementById('inicio-vista');
@@ -3139,33 +3503,92 @@ camInicio.lookAt(0, 0.85, 0);
 const modelo = crearPersona(SKIN_BASE.camisa, { semillaId: 'yo' });
 escenaInicio.add(modelo.g);
 
-const OPCIONES = [
-  ['camisa', 'Camisa', ['#f2b134', ...COLORES, '#2b3440', '#f4f4f4']],
-  ['pantalon', 'Pantalón', ['#3d4a5c', '#2a2f38', '#5b4636', '#2f5d8a', '#7a7f87', '#8a3b3b', '#3f6b46']],
-  ['piel', 'Piel', PIELES],
-  ['pelo', 'Pelo', [...PELOS, '#c9ced4', '#d94f8a', '#3f7bd9']],
-];
+// Editor de personaje: pestañas con filas de colores (muestras + uno libre) y de opciones.
+const MUESTRAS = {
+  camisa: ['#f2b134', ...COLORES, '#2b3440', '#f4f4f4'],
+  pantalon: ['#3d4a5c', '#2a2f38', '#5b4636', '#2f5d8a', '#7a7f87', '#8a3b3b', '#3f6b46'],
+  zapatos: ['#2a2f38', '#f4f4f4', '#7a4a2a', '#d64545', '#3f7bd9'],
+  piel: [...PIELES, '#7a4e36', '#5a3826'],
+  pelo: [...PELOS, '#c9ced4', '#d94f8a', '#3f7bd9', '#4caf6a'],
+  detalle: ['#d64545', '#2b3440', '#f2c230', '#3f7bd9', '#4caf6a', '#9b6fd6', '#f4f4f4'],
+};
+const PESTANAS = {
+  Cuerpo: [['color', 'piel', 'Piel'], ['opcion', 'complexion', 'Complexión'], ['altura', 'altura', 'Estatura']],
+  Cabeza: [['opcion', 'peinado', 'Peinado'], ['color', 'pelo', 'Color de pelo'], ['opcion', 'ojos', 'Ojos'], ['opcion', 'barba', 'Barba y bigote']],
+  Ropa: [['opcion', 'ropa', 'Prenda'], ['color', 'camisa', 'Color de la prenda'], ['color', 'pantalon', 'Pantalón'], ['color', 'zapatos', 'Zapatos']],
+  Accesorios: [['opcion', 'accesorio', 'En la cabeza'], ['opcion', 'lentes', 'Lentes'], ['color', 'detalle', 'Color de detalles (gorra, gorro, corbata, audífonos)']],
+};
+let pestana = 'Cuerpo';
 function pintarOpciones() {
-  const filas = OPCIONES.map(([k, titulo, colores]) => `<div class="inicio-fila"><b>${titulo}</b><div class="muestras">${colores
-    .map((c) => `<button type="button" class="muestra" data-k="${k}" data-v="${c}" style="background:${c}" aria-label="${titulo} ${c}" aria-pressed="${miSkin[k] === c}"></button>`)
-    .join('')}</div></div>`);
-  filas.push(`<div class="inicio-fila"><b>Accesorio</b><div class="muestras">${Object.entries(ACCESORIOS)
-    .map(([v, t]) => `<button type="button" class="opcion" data-k="accesorio" data-v="${v}" aria-pressed="${miSkin.accesorio === v}">${t}</button>`)
-    .join('')}</div></div>`);
-  document.getElementById('inicio-opciones').innerHTML = filas.join('');
+  const pestanas = `<div class="pestanas" role="tablist">${Object.keys(PESTANAS)
+    .map((n) => `<button type="button" role="tab" class="pestana" data-pestana="${n}" aria-selected="${n === pestana}">${n}</button>`)
+    .join('')}</div>`;
+  const filas = PESTANAS[pestana].map(([tipo, k, titulo]) => {
+    let cont = '';
+    if (tipo === 'color') {
+      cont = MUESTRAS[k].map((c) => `<button type="button" class="muestra" data-k="${k}" data-v="${c}" style="background:${c}" aria-label="${titulo} ${c}"></button>`).join('');
+      cont += `<input type="color" class="muestra-libre" data-k="${k}" value="${miSkin[k]}" aria-label="${titulo}: otro color">`;
+    } else if (tipo === 'opcion') {
+      cont = Object.entries(OPCIONES_SKIN[k]).map(([v, t]) => `<button type="button" class="opcion" data-k="${k}" data-v="${v}">${t}</button>`).join('');
+    } else {
+      cont = `<input type="range" class="estatura" data-k="altura" min="0.9" max="1.1" step="0.02" value="${miSkin.altura}" aria-label="${titulo}">`;
+    }
+    return `<div class="inicio-fila"><b>${titulo}</b><div class="muestras">${cont}</div></div>`;
+  });
+  const acciones = `<div class="inicio-acciones"><button type="button" class="opcion" data-accion="azar">🎲 Aleatorio</button><button type="button" class="opcion" data-accion="base">Restablecer</button></div>`;
+  document.getElementById('inicio-opciones').innerHTML = pestanas + filas.join('') + acciones;
+  marcar();
 }
-document.getElementById('inicio-opciones').addEventListener('click', (e) => {
-  const b = e.target.closest('[data-k]');
-  if (!b) return;
-  miSkin = { ...miSkin, [b.dataset.k]: b.dataset.v };
+// Marca lo elegido sin rehacer el panel (asi no se cierra el selector de color mientras lo arrastras).
+function marcar() {
+  for (const b of document.querySelectorAll('#inicio-opciones [data-k][data-v]')) b.setAttribute('aria-pressed', String(miSkin[b.dataset.k] === b.dataset.v));
+}
+function ponerSkin(cambio) {
+  miSkin = { ...miSkin, ...cambio };
   try {
     localStorage.setItem('oficina-skin', JSON.stringify(miSkin));
   } catch {}
   vestir(modelo, miSkin);
   vestir(yo, miSkin);
   ultimaPos = ''; // que los demas la vean ya, aunque estes quieto
-  pintarOpciones();
+  marcar();
+}
+const alAzar = (lista) => lista[Math.floor(Math.random() * lista.length)];
+const opciones = document.getElementById('inicio-opciones');
+opciones.addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  if (b.dataset.pestana) {
+    pestana = b.dataset.pestana;
+    pintarOpciones();
+  } else if (b.dataset.accion === 'base') {
+    ponerSkin(SKIN_BASE);
+    pintarOpciones();
+  } else if (b.dataset.accion === 'azar') {
+    const s = { altura: Number((0.9 + Math.random() * 0.2).toFixed(2)) };
+    for (const k of Object.keys(MUESTRAS)) s[k] = alAzar(MUESTRAS[k]);
+    for (const k of Object.keys(OPCIONES_SKIN)) s[k] = alAzar(Object.keys(OPCIONES_SKIN[k]));
+    ponerSkin(s);
+    pintarOpciones();
+  } else if (b.dataset.k) ponerSkin({ [b.dataset.k]: b.dataset.v });
 });
+opciones.addEventListener('input', (e) => {
+  const k = e.target.dataset.k;
+  if (k) ponerSkin({ [k]: k === 'altura' ? Number(e.target.value) : e.target.value });
+});
+// Arrastrar la vista previa gira al muneco.
+let giro = 0;
+let arrastre = null;
+vistaInicio.addEventListener('pointerdown', (e) => {
+  arrastre = e.clientX;
+  vistaInicio.setPointerCapture(e.pointerId);
+});
+vistaInicio.addEventListener('pointermove', (e) => {
+  if (arrastre === null) return;
+  giro += (e.clientX - arrastre) * 0.01;
+  arrastre = e.clientX;
+});
+vistaInicio.addEventListener('pointerup', () => (arrastre = null));
 
 let menuAbierto = false;
 function abrirMenu() {
@@ -3183,7 +3606,11 @@ function abrirMenu() {
     if (!menuAbierto) return;
     requestAnimationFrame(girar);
     const t = reloj.getElapsedTime();
-    modelo.g.rotation.y = Math.sin(t * 0.6) * 0.6;
+    modelo.g.rotation.y = giro + (arrastre === null ? Math.sin(t * 0.6) * 0.4 : 0);
+    // En la pestaña Cabeza la camara se acerca a la cara.
+    const cerca = pestana === 'Cabeza' ? 1 : 0;
+    camInicio.position.lerp(new THREE.Vector3(0, 1.15 + cerca * 0.2, 4.2 - cerca * 2.3), 0.12);
+    camInicio.lookAt(0, 0.85 + cerca * 0.45, 0);
     modelo.cabeza.rotation.z = Math.sin(t * 0.8) * 0.05;
     modelo.brazos[1].rotation.x = Math.sin(t * 1.3) * 0.15 - 0.1;
     rendererInicio.render(escenaInicio, camInicio);

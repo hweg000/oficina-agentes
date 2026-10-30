@@ -44,14 +44,25 @@
 
   #aviso { position: fixed; left: 16px; top: 16px; display: none; padding: 10px 16px; border-radius: 14px; background: var(--acento); color: #fff; font-weight: 800; box-shadow: var(--sombra); cursor: pointer; border: 0; font: inherit; font-weight: 800; }
   #aviso.si { display: block; }
-  #titulo { position: fixed; left: 16px; bottom: 16px; font-weight: 800; font-size: 13px; color: var(--suave); background: rgba(255, 255, 255, 0.7); padding: 6px 12px; border-radius: 999px; }
+  /* Tarjeta de controles: se abre con el boton Controles de la barra. */
+  #titulo { position: fixed; left: 16px; bottom: 72px; z-index: 5; width: min(330px, calc(100vw - 32px)); margin: 0; padding: 10px 12px; list-style: none; display: grid; gap: 5px; font-size: 12.5px; background: rgba(255, 255, 255, 0.96); backdrop-filter: blur(14px); border-radius: 16px; box-shadow: var(--sombra); }
+  #titulo.plegado { display: none; }
+  #titulo li { display: grid; grid-template-columns: 124px 1fr; gap: 8px; align-items: baseline; }
+  #titulo b { justify-self: start; padding: 1px 7px; border-radius: 6px; background: rgba(43, 52, 64, 0.08); font-size: 11.5px; }
+  #titulo span { color: var(--suave); font-weight: 700; }
+  /* Minimapa abajo a la derecha. */
+  #minimapa { position: fixed; right: 16px; bottom: 16px; padding: 6px; border-radius: 18px; background: var(--panel); backdrop-filter: blur(14px); box-shadow: var(--sombra); }
+  #minimapa-plegar { display: block; width: 100%; border: 0; border-radius: 999px; padding: 4px 10px; font: inherit; font-size: 12px; font-weight: 800; background: transparent; color: var(--texto); cursor: pointer; text-align: left; }
+  #minimapa-plegar:hover { background: rgba(43, 52, 64, 0.08); }
+  #minimapa-lienzo { display: block; width: 170px; height: 170px; margin-top: 4px; border-radius: 12px; background: #8fb7d6; cursor: pointer; }
+  #minimapa.plegado #minimapa-lienzo { display: none; }
 
   #vacio { position: fixed; left: 50%; top: 18%; transform: translateX(-50%); text-align: center; background: var(--panel); backdrop-filter: blur(10px); padding: 16px 22px; border-radius: 18px; box-shadow: var(--sombra); display: none; max-width: calc(100vw - 32px); }
   #vacio.si { display: block; }
   #vacio b { display: block; font-size: 17px; }
   #vacio span { color: var(--suave); font-size: 13px; }
 
-  #panel { position: fixed; top: 16px; right: 16px; bottom: 16px; width: 330px; background: var(--panel); backdrop-filter: blur(14px); border-radius: 20px; box-shadow: var(--sombra); display: flex; flex-direction: column; overflow: hidden; }
+  #panel { position: fixed; top: 16px; right: 16px; max-height: calc(100vh - 262px); width: 330px; background: var(--panel); backdrop-filter: blur(14px); border-radius: 20px; box-shadow: var(--sombra); display: flex; flex-direction: column; overflow: hidden; }
   #panel header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 14px 16px 10px; }
   #panel header h1 { font-size: 16px; margin: 0; flex: 1 1 100%; }
   #panel header #conexion { flex: 1; }
@@ -60,7 +71,7 @@
   #conexion.ok::before { background: #4fcf73; }
   #editor { border: 0; background: rgba(43, 52, 64, 0.07); border-radius: 8px; padding: 4px 6px; font: inherit; font-size: 12px; color: var(--texto); cursor: pointer; }
   #plegar { border: 0; background: rgba(43, 52, 64, 0.07); border-radius: 8px; padding: 4px 8px; font: inherit; font-size: 12px; cursor: pointer; color: var(--texto); }
-  #lista { overflow-y: auto; padding: 0 10px 10px; flex: 1; }
+  #lista { overflow-y: auto; padding: 0 10px 10px; flex: 1; min-height: 0; }
   .grupo h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--suave); margin: 12px 6px 6px; }
   .grupo.esperan h3 { color: var(--acento); }
   .fila { display: grid; grid-template-columns: 10px 1fr auto; gap: 2px 8px; align-items: center; width: 100%; text-align: left; border: 0; background: transparent; padding: 7px 8px; border-radius: 10px; font: inherit; color: inherit; cursor: pointer; }
@@ -94,13 +105,28 @@
   #tarjeta .nota { font-size: 12px; color: var(--suave); margin: 4px 0 12px; }
   #tarjeta .acciones { display: flex; gap: 8px; justify-content: flex-end; }
 
-  #chat { position: fixed; left: 16px; bottom: 100px; width: min(300px, calc(100vw - 32px)); display: flex; flex-direction: column; gap: 6px; }
+  #chat { position: fixed; left: 16px; bottom: 72px; width: min(300px, calc(100vw - 32px)); display: flex; flex-direction: column; gap: 6px; }
   #mensajes { list-style: none; margin: 0; padding: 0; max-height: 170px; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; font-size: 13px; }
-  #mensajes li { background: rgba(255, 255, 255, 0.8); padding: 4px 10px; border-radius: 12px; align-self: flex-start; max-width: 100%; overflow-wrap: anywhere; }
+  #mensajes li { background: rgba(255, 255, 255, 0.85); box-shadow: 0 2px 8px rgba(43, 52, 64, 0.08); padding: 4px 10px; border-radius: 12px; align-self: flex-start; max-width: 100%; overflow-wrap: anywhere; }
   #mensajes b { margin-right: 6px; }
   #escribir { border: 0; border-radius: 999px; padding: 8px 14px; font: inherit; font-size: 13px; background: rgba(255, 255, 255, 0.92); box-shadow: var(--sombra); }
   .dice { max-width: 200px; padding: 6px 10px; border-radius: 14px 14px 14px 4px; background: #2b3440; color: #fff; font-size: 12px; line-height: 1.3; box-shadow: var(--sombra); overflow-wrap: anywhere; }
-  #modo { position: fixed; left: 16px; bottom: 56px; border: 0; border-radius: 999px; padding: 8px 14px; font: inherit; font-size: 13px; font-weight: 800; background: #2b3440; color: #fff; box-shadow: var(--sombra); cursor: pointer; }
+  /* Barra de herramientas: un solo bloque abajo a la izquierda. */
+  #barra { position: fixed; left: 16px; bottom: 16px; display: flex; gap: 2px; padding: 5px; border-radius: 999px; background: var(--panel); backdrop-filter: blur(14px); box-shadow: var(--sombra); max-width: calc(100vw - 32px); overflow-x: auto; }
+  #barra button { display: inline-flex; align-items: center; gap: 6px; flex: none; border: 0; border-radius: 999px; padding: 8px 13px; font: inherit; font-size: 13px; font-weight: 800; background: transparent; color: var(--texto); cursor: pointer; transition: background 0.15s; }
+  #barra button:hover { background: rgba(43, 52, 64, 0.08); }
+  #barra button:focus-visible { outline: 2px solid var(--acento); outline-offset: 1px; }
+  #barra button::before { font-size: 15px; line-height: 1; }
+  #modo::before { content: '🎥'; }
+  #boton-gestos::before { content: '😄'; }
+  #boton-mapa::before { content: '🗺️'; }
+  #boton-skin::before { content: '👕'; }
+  #barra #boton-skin { background: var(--acento); color: #fff; }
+  #barra #boton-skin:hover { background: color-mix(in srgb, var(--acento) 85%, #000); }
+  #boton-ayuda::before { content: '❔'; }
+  #barra #barra-plegar { font-size: 16px; }
+  #barra.plegado button:not(#barra-plegar) { display: none; }
+  #barra kbd { padding: 1px 6px; border-radius: 6px; background: rgba(43, 52, 64, 0.1); font: inherit; font-size: 11px; color: var(--suave); }
   #accion { position: fixed; left: 50%; top: 62%; transform: translateX(-50%); display: none; padding: 8px 14px; border-radius: 12px; background: rgba(255, 255, 255, 0.92); box-shadow: var(--sombra); font-size: 14px; font-weight: 700; white-space: nowrap; }
   #accion.si { display: block; }
   #accion b { color: var(--acento); }
@@ -133,12 +159,6 @@
   .avisito i { width: 8px; height: 8px; border-radius: 50%; }
   @keyframes llegar { from { opacity: 0; translate: 0 -8px; } }
 
-  /* Botón de gestos */
-  #boton-gestos { position: fixed; left: 190px; bottom: 56px; border: 0; border-radius: 999px; padding: 8px 14px; font: inherit; font-size: 13px; font-weight: 800; background: #2b3440; color: #fff; box-shadow: var(--sombra); cursor: pointer; transition: transform 0.15s, background 0.15s; }
-  #boton-gestos:hover { background: #3d4a5c; transform: translateY(-1px); }
-  #boton-gestos:active { transform: translateY(1px); }
-  #boton-mapa { position: fixed; left: 300px; bottom: 56px; border: 0; border-radius: 999px; padding: 8px 14px; font: inherit; font-size: 13px; font-weight: 800; background: #2b3440; color: #fff; box-shadow: var(--sombra); cursor: pointer; }
-  #boton-mapa:hover { background: #3d4a5c; }
 
   /* Globo de gesto sobre la cabeza de los personajes */
   .globo-gesto { pointer-events: none; padding: 6px 12px; border-radius: 999px; background: rgba(255, 255, 255, 0.95); box-shadow: var(--sombra); border: 2px solid var(--acento); font-size: 13px; font-weight: 800; color: var(--texto); display: flex; align-items: center; gap: 6px; white-space: nowrap; animation: popGesto 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
@@ -231,19 +251,27 @@
   .muestra[aria-pressed="true"] { border-color: #2b3440; box-shadow: 0 0 0 2px #fff, 0 0 0 4px #2b3440; }
   .opcion { border: 0; border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 13px; background: #e9eef3; cursor: pointer; }
   .opcion[aria-pressed="true"] { background: #2b3440; color: #fff; }
+  #inicio-vista { cursor: grab; touch-action: none; }
+  .pestanas { display: flex; gap: 4px; margin-bottom: 14px; padding: 4px; border-radius: 999px; background: #e9eef3; }
+  .pestana { flex: 1; border: 0; border-radius: 999px; padding: 7px 4px; font: inherit; font-size: 13px; font-weight: 700; background: none; cursor: pointer; }
+  .pestana[aria-selected="true"] { background: #fff; box-shadow: 0 1px 4px rgba(43, 52, 64, 0.18); }
+  .muestra-libre { width: 30px; height: 30px; padding: 0; border: 2px dashed rgba(43, 52, 64, 0.35); border-radius: 50%; background: none; cursor: pointer; }
+  .muestra-libre::-webkit-color-swatch-wrapper { padding: 2px; }
+  .muestra-libre::-webkit-color-swatch { border: 0; border-radius: 50%; }
+  .estatura { width: 100%; accent-color: var(--acento); }
+  .inicio-acciones { display: flex; gap: 6px; margin: 4px 0 8px; }
   #inicio-entrar { width: 100%; margin-top: 6px; border: 0; border-radius: 999px; padding: 12px; font: inherit; font-size: 16px; font-weight: 800; background: var(--acento); color: #fff; cursor: pointer; }
-  #boton-skin { position: fixed; left: 410px; bottom: 56px; border: 0; border-radius: 999px; padding: 8px 14px; font: inherit; font-size: 13px; font-weight: 800; background: #2b3440; color: #fff; box-shadow: var(--sombra); cursor: pointer; }
   @media (max-width: 700px) {
     .inicio-caja { grid-template-columns: 1fr; padding: 16px; }
     #inicio-vista { aspect-ratio: auto; height: 34vh; }
-    #boton-skin { left: 130px; bottom: 100px; }
   }
   @media (max-width: 700px) {
-    #panel { top: auto; left: 16px; right: 16px; width: auto; max-height: 45vh; }
-    #titulo { display: none; }
-    #chat { bottom: auto; top: 64px; }
-    #boton-gestos { left: 160px; }
-    #boton-mapa { left: 16px; bottom: 100px; }
+    #panel { top: auto; bottom: 16px; left: 16px; right: 16px; width: auto; max-height: 45vh; }
+    #barra { bottom: auto; top: 16px; }
+    #titulo { bottom: auto; top: 72px; }
+    #chat { bottom: auto; top: 72px; }
+    #minimapa { bottom: auto; top: 72px; }
+    #minimapa-lienzo { width: 110px; height: 110px; }
     .ruleta-rueda { width: 300px; height: 300px; }
   }
 </style>
@@ -260,18 +288,26 @@
   <button id="aviso" type="button"></button>
   <div id="avisos" aria-live="polite"></div>
   <div id="vacio"><b>Nadie trabajando por ahora</b><span>Abre Claude Code en cualquier proyecto y aquí aparecerá su escritorio.</span></div>
-  <div id="titulo">Clic en el piso: caminas · clic en un agente: vas a verlo · arrastra: mueves la vista · rueda: zoom · V: cambiar vista · M: mapa · G: gestos</div>
+  <ul id="titulo" aria-label="Controles"></ul>
+  <section id="minimapa" aria-label="Minimapa">
+    <button id="minimapa-plegar" type="button" aria-expanded="true" title="Mostrar u ocultar el minimapa">🧭 Minimapa</button>
+    <canvas id="minimapa-lienzo" aria-label="Minimapa: clic lleva la vista ahí (isométrica), clic derecho camina hasta ahí" title="Clic: mover la vista · Clic derecho: caminar hasta ahí"></canvas>
+  </section>
   <div id="tarjeta" role="dialog" aria-live="polite"></div>
-  <button id="modo" type="button" title="Cambiar vista (V)">Vista: Isométrica</button>
-  <button id="boton-gestos" type="button" title="Ruleta de gestos (G)">Gestos (G)</button>
-  <button id="boton-mapa" type="button" title="Cambiar mapa (M)">Mapa: Isla</button>
+  <nav id="barra" aria-label="Herramientas">
+    <button id="barra-plegar" type="button" aria-expanded="true" title="Mostrar u ocultar opciones" aria-label="Opciones">☰</button>
+    <button id="boton-skin" type="button" title="Editar tu personaje">Personaje</button>
+    <button id="modo" type="button" title="Cambiar vista (V)">Vista: Isométrica</button>
+    <button id="boton-gestos" type="button" title="Ruleta de gestos (G)">Gestos <kbd>G</kbd></button>
+    <button id="boton-mapa" type="button" title="Cambiar mapa (M)">Mapa: Isla</button>
+    <button id="boton-ayuda" type="button" aria-expanded="false" title="Ver controles">Controles</button>
+  </nav>
   <div id="accion" aria-live="polite"></div>
   <form id="chat">
     <ol id="mensajes" aria-live="polite"></ol>
     <input id="escribir" maxlength="200" autocomplete="off" placeholder="Enter para escribir en el chat" aria-label="Mensaje para el chat">
   </form>
   <div id="mira"></div>
-  <button id="boton-skin" type="button" title="Cambiar tu personaje">Personaje</button>
   <div id="inicio" role="dialog" aria-modal="true" aria-labelledby="inicio-titulo">
     <div class="inicio-caja">
       <h1 id="inicio-titulo">Oficina de agentes</h1>
