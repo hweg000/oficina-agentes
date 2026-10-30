@@ -79,6 +79,19 @@ function mandarChat(m) {
   for (const res of clientes.keys()) res.write(datos);
 }
 
+// La skin la manda el navegador de cada quien: solo pasan colores #rrggbb y accesorios conocidos.
+const ACCESORIOS = ['', 'gorra', 'sombrero', 'lentes', 'corona'];
+function limpiarSkin(s) {
+  if (!s || typeof s !== 'object') return null;
+  const r = {};
+  for (const k of ['camisa', 'pantalon', 'piel', 'pelo']) {
+    if (!/^#[0-9a-f]{6}$/i.test(s[k])) return null;
+    r[k] = s[k];
+  }
+  r.accesorio = ACCESORIOS.includes(s.accesorio) ? s.accesorio : '';
+  return r;
+}
+
 function leerJson(req, res, max, usar) {
   let cuerpo = '';
   req.on('data', (c) => {
@@ -138,12 +151,12 @@ const server = http.createServer((req, res) => {
         if (texto) mandarChat({ id: String(id || '').slice(0, 40), nombre, texto, t: Date.now() });
       });
     }
-    return leerJson(req, res, 1000, ({ id, x, y, z, ry, mapa }) => {
+    return leerJson(req, res, 1000, ({ id, x, y, z, ry, mapa, skin }) => {
       const n = [x, y, z, ry].map(Number);
       if (typeof id === 'string' && id.length <= 40 && n.every((v) => Number.isFinite(v) && Math.abs(v) < 500)) {
         // Cada quien elige su mapa: las coordenadas solo valen entre quienes ven el mismo.
         mapa = typeof mapa === 'string' ? mapa.slice(0, 12) : 'isla';
-        jugadores.set(`${nombre}:${id}`, { id, nombre, x: n[0], y: n[1], z: n[2], ry: n[3], mapa, ultimo: Date.now() });
+        jugadores.set(`${nombre}:${id}`, { id, nombre, x: n[0], y: n[1], z: n[2], ry: n[3], mapa, skin: limpiarSkin(skin), ultimo: Date.now() });
         emitirJugadores();
       }
     });

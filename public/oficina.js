@@ -462,22 +462,32 @@ function crearPersona(color, { ayudante = false, semillaId = '' } = {}) {
   sombra.position.y = 0.02;
   g.add(sombra);
 
+  // Lo que se puede recolorear con una skin (ver vestir).
+  const ropa = [];
+  const pantalon = [];
+  const pieles = [];
   const piernas = [-0.1, 0.1].map((x) => {
     const p = new THREE.Group();
     p.position.x = x;
     p.add(caja(0.14, 0.46, 0.15, '#3d4a5c', 0, -0.23, 0));
+    pantalon.push(p.children[0]);
     p.add(caja(0.15, 0.08, 0.22, '#2a2f38', 0, -0.44, 0.04));
     cadera.add(p);
     return p;
   });
   const torso = malla(new THREE.CylinderGeometry(0.2, 0.27, 0.56, 7), color, 0, 0.28, 0);
   cadera.add(torso);
-  cadera.add(malla(new THREE.CylinderGeometry(0.08, 0.1, 0.08, 6), piel, 0, 0.6, 0));
+  ropa.push(torso);
+  const cuello = malla(new THREE.CylinderGeometry(0.08, 0.1, 0.08, 6), piel, 0, 0.6, 0);
+  cadera.add(cuello);
+  pieles.push(cuello);
 
   const cabeza = new THREE.Group();
   cabeza.position.y = 0.78;
   cadera.add(cabeza);
-  cabeza.add(malla(new THREE.IcosahedronGeometry(0.22, 1), piel));
+  const cara = malla(new THREE.IcosahedronGeometry(0.22, 1), piel);
+  cabeza.add(cara);
+  pieles.push(cara);
   const cabello = malla(new THREE.SphereGeometry(0.235, 8, 5, 0, Math.PI * 2, 0, Math.PI / 2), pelo, 0, 0.02, -0.02);
   cabello.rotation.x = -0.25;
   cabeza.add(cabello);
@@ -491,8 +501,11 @@ function crearPersona(color, { ayudante = false, semillaId = '' } = {}) {
   const brazos = [-0.28, 0.28].map((x) => {
     const b = new THREE.Group();
     b.position.set(x, 0.5, 0);
-    b.add(caja(0.1, 0.38, 0.12, color, 0, -0.19, 0));
-    b.add(malla(new THREE.IcosahedronGeometry(0.065, 0), piel, 0, -0.42, 0));
+    const manga = caja(0.1, 0.38, 0.12, color, 0, -0.19, 0);
+    const mano = malla(new THREE.IcosahedronGeometry(0.065, 0), piel, 0, -0.42, 0);
+    b.add(manga, mano);
+    ropa.push(manga);
+    pieles.push(mano);
     cadera.add(b);
     return b;
   });
@@ -503,14 +516,50 @@ function crearPersona(color, { ayudante = false, semillaId = '' } = {}) {
   puntos.visible = false;
   g.add(puntos);
 
+  const accesorio = new THREE.Group();
+  cabeza.add(accesorio);
+
   if (ayudante) g.scale.setScalar(0.85);
-  return { g, cadera, piernas, brazos, cabeza, puntos };
+  return { g, cadera, piernas, brazos, cabeza, puntos, ropa, pantalon, pieles, cabello, accesorio };
 }
+
+// Skin: colores y un accesorio que cada quien elige en el menu de inicio y viaja con su posicion.
+const ACCESORIOS = { '': 'Nada', gorra: 'Gorra', sombrero: 'Sombrero', lentes: 'Lentes', corona: 'Corona' };
+function vestir(c, skin) {
+  for (const m of c.ropa) m.material = mat(skin.camisa);
+  for (const m of c.pantalon) m.material = mat(skin.pantalon);
+  for (const m of c.pieles) m.material = mat(skin.piel);
+  c.cabello.material = mat(skin.pelo);
+  c.accesorio.clear();
+  const a = c.accesorio;
+  if (skin.accesorio === 'gorra') {
+    a.add(malla(new THREE.CylinderGeometry(0.235, 0.235, 0.1, 8), skin.camisa, 0, 0.14, 0));
+    a.add(caja(0.3, 0.03, 0.18, skin.camisa, 0, 0.1, 0.2));
+  } else if (skin.accesorio === 'sombrero') {
+    a.add(malla(new THREE.CylinderGeometry(0.38, 0.38, 0.03, 12), '#3b2f2a', 0, 0.15, 0));
+    a.add(malla(new THREE.CylinderGeometry(0.2, 0.22, 0.22, 10), '#3b2f2a', 0, 0.27, 0));
+  } else if (skin.accesorio === 'lentes') {
+    for (const x of [-0.08, 0.08]) a.add(caja(0.11, 0.08, 0.02, '#1b1f26', x, 0.0, 0.215));
+    a.add(caja(0.06, 0.02, 0.02, '#1b1f26', 0, 0.02, 0.215));
+  } else if (skin.accesorio === 'corona') {
+    a.add(malla(new THREE.CylinderGeometry(0.17, 0.16, 0.1, 8, 1, true), '#f2c230', 0, 0.22, 0));
+    for (let i = 0; i < 5; i++) {
+      const ang = (i / 5) * Math.PI * 2;
+      a.add(malla(new THREE.ConeGeometry(0.04, 0.09, 4), '#f2c230', Math.sin(ang) * 0.16, 0.31, Math.cos(ang) * 0.16));
+    }
+  }
+}
+const SKIN_BASE = { camisa: '#f2b134', pantalon: '#3d4a5c', piel: PIELES[0], pelo: PELOS[0], accesorio: '' };
+let miSkin = { ...SKIN_BASE };
+try {
+  Object.assign(miSkin, JSON.parse(localStorage.getItem('oficina-skin')) || {});
+} catch {}
 
 // Tu avatar en la plaza.
 const yo = crearPersona('#f2b134', { semillaId: 'yo' });
 yo.g.position.set(0, 0.18, 2.5);
 yo.g.rotation.y = Math.atan2(camera.position.x, camera.position.z);
+vestir(yo, miSkin);
 scene.add(yo.g);
 const etiquetaYo = etiqueta('etiqueta-yo', 'Tú');
 etiquetaYo.position.y = 1.95;
@@ -1185,6 +1234,7 @@ function sincronizarJugadores(lista) {
     let o = otros.get(k);
     if (!o) {
       const c = crearPersona(COLORES[hash(j.nombre) % COLORES.length], { semillaId: j.nombre });
+      if (j.skin) vestir(c, j.skin);
       c.g.position.set(j.x, j.y, j.z);
       c.g.rotation.y = j.ry;
       const e = etiqueta('etiqueta-yo', `<i></i>${esc(j.nombre)}`);
@@ -1192,8 +1242,13 @@ function sincronizarJugadores(lista) {
       e.element.dataset.claude = claudeDe(j.nombre);
       c.g.add(e);
       scene.add(c.g);
-      o = { c, e };
+      o = { c, e, skin: JSON.stringify(j.skin) };
       otros.set(k, o);
+    }
+    // Cambio su skin en el menu: se le vuelve a vestir sin rehacer el muneco.
+    if (j.skin && JSON.stringify(j.skin) !== o.skin) {
+      vestir(o.c, j.skin);
+      o.skin = JSON.stringify(j.skin);
     }
     o.meta = j;
     // Quien anda en otro mapa no se dibuja: sus coordenadas son de alla.
@@ -1293,7 +1348,7 @@ function mandarPosicion(t) {
   ultimaPos = pos;
   ultimoEnvio = t;
   const [px, py, pz, ry] = pos.split(',').map(Number);
-  fetch(rutaConNombre('/posicion'), { method: 'POST', body: JSON.stringify({ id: miId, x: px, y: py, z: pz, ry, mapa: MAPA }) }).catch(() => {});
+  fetch(rutaConNombre('/posicion'), { method: 'POST', body: JSON.stringify({ id: miId, x: px, y: py, z: pz, ry, mapa: MAPA, skin: miSkin }) }).catch(() => {});
 }
 
 // ---------- ruleta de gestos ----------
@@ -2593,6 +2648,7 @@ function aplicarEventoEstacional(eleccionManual = modoEventoSeleccionado) {
 
   const cfg = eventoActualConfig;
   const evId = cfg.id;
+  document.body.dataset.festividad = evId;
 
   // Ajustes de colores de entorno según la festividad
   if (evId === 'halloween') {
@@ -2704,6 +2760,7 @@ function poblarOpcionesEvento() {
     card.addEventListener('click', () => {
       modoEventoSeleccionado = op.id === 'auto' ? null : op.id;
       aplicarEventoEstacional(modoEventoSeleccionado);
+      ambienteCamara();
       cerrarModalEvento();
     });
     eventoGrid.appendChild(card);
@@ -2759,6 +2816,18 @@ const camPersona = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.1
 // en isometrica se manda fuera de rango porque la camara esta lejos.
 const niebla = new THREE.Fog('#dfe8f1', 1e4, 1e4);
 scene.fog = niebla;
+// De cerca, la niebla cambia con la festividad: Halloween se cierra y oscurece.
+const NIEBLA_FESTIVA = {
+  halloween: ['#2a2238', 6, 40],
+  diademuertos: ['#e9a96a', 25, 90],
+  navidad: ['#e8f0f8', 14, 70],
+};
+function ambienteCamara() {
+  const [color, near, far] = NIEBLA_FESTIVA[eventoActualConfig?.id] || ['#dfe8f1', 35, 120];
+  niebla.color.set(color);
+  niebla.near = modo === 'iso' ? 1e4 : near;
+  niebla.far = modo === 'iso' ? 1e4 : far;
+}
 let modo = 'iso';
 let camara = camera;
 const vista = { yaw: 0, pitch: 0 };
@@ -2774,8 +2843,7 @@ function cambiarModo(nuevo) {
   const iso = modo === 'iso';
   camara = iso ? camera : camPersona;
   controls.enabled = iso;
-  niebla.near = iso ? 1e4 : 35;
-  niebla.far = iso ? 1e4 : 120;
+  ambienteCamara();
   tarjeta.classList.remove('si');
   yoDestino = null;
   yoBusca = null;
@@ -3046,6 +3114,7 @@ function conectar() {
   fuente.addEventListener('gesto', (m) => recibirGesto(JSON.parse(m.data)));
   fuente.addEventListener('yo', (m) => {
     miNombre = JSON.parse(m.data);
+    document.getElementById('inicio-nombre').innerHTML = `Entras como <b>${esc(miNombre)}</b>`;
     if (fotoActual.sesiones.length) sincronizar(fotoActual);
   });
   fuente.onerror = () => {
@@ -3053,6 +3122,95 @@ function conectar() {
     conexion.textContent = 'Sin conexión';
   };
 }
+// ---------- pantalla de inicio: tu muneco al frente y su skin ----------
+const inicio = document.getElementById('inicio');
+const vistaInicio = document.getElementById('inicio-vista');
+const rendererInicio = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+rendererInicio.setPixelRatio(Math.min(devicePixelRatio, 2));
+vistaInicio.appendChild(rendererInicio.domElement);
+const escenaInicio = new THREE.Scene();
+escenaInicio.add(new THREE.HemisphereLight('#ffffff', '#c9b79c', 1.6));
+const luzInicio = new THREE.DirectionalLight('#fff3e0', 1.4);
+luzInicio.position.set(2, 4, 5);
+escenaInicio.add(luzInicio);
+const camInicio = new THREE.PerspectiveCamera(30, 3 / 4, 0.1, 50);
+camInicio.position.set(0, 1.15, 4.2);
+camInicio.lookAt(0, 0.85, 0);
+const modelo = crearPersona(SKIN_BASE.camisa, { semillaId: 'yo' });
+escenaInicio.add(modelo.g);
+
+const OPCIONES = [
+  ['camisa', 'Camisa', ['#f2b134', ...COLORES, '#2b3440', '#f4f4f4']],
+  ['pantalon', 'Pantalón', ['#3d4a5c', '#2a2f38', '#5b4636', '#2f5d8a', '#7a7f87', '#8a3b3b', '#3f6b46']],
+  ['piel', 'Piel', PIELES],
+  ['pelo', 'Pelo', [...PELOS, '#c9ced4', '#d94f8a', '#3f7bd9']],
+];
+function pintarOpciones() {
+  const filas = OPCIONES.map(([k, titulo, colores]) => `<div class="inicio-fila"><b>${titulo}</b><div class="muestras">${colores
+    .map((c) => `<button type="button" class="muestra" data-k="${k}" data-v="${c}" style="background:${c}" aria-label="${titulo} ${c}" aria-pressed="${miSkin[k] === c}"></button>`)
+    .join('')}</div></div>`);
+  filas.push(`<div class="inicio-fila"><b>Accesorio</b><div class="muestras">${Object.entries(ACCESORIOS)
+    .map(([v, t]) => `<button type="button" class="opcion" data-k="accesorio" data-v="${v}" aria-pressed="${miSkin.accesorio === v}">${t}</button>`)
+    .join('')}</div></div>`);
+  document.getElementById('inicio-opciones').innerHTML = filas.join('');
+}
+document.getElementById('inicio-opciones').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-k]');
+  if (!b) return;
+  miSkin = { ...miSkin, [b.dataset.k]: b.dataset.v };
+  try {
+    localStorage.setItem('oficina-skin', JSON.stringify(miSkin));
+  } catch {}
+  vestir(modelo, miSkin);
+  vestir(yo, miSkin);
+  ultimaPos = ''; // que los demas la vean ya, aunque estes quieto
+  pintarOpciones();
+});
+
+let menuAbierto = false;
+function abrirMenu() {
+  menuAbierto = true;
+  inicio.hidden = false;
+  if (document.pointerLockElement) document.exitPointerLock();
+  vestir(modelo, miSkin);
+  pintarOpciones();
+  const { clientWidth: w, clientHeight: h } = vistaInicio;
+  rendererInicio.setSize(w, h, false);
+  camInicio.aspect = w / h;
+  camInicio.updateProjectionMatrix();
+  const reloj = new THREE.Clock();
+  (function girar() {
+    if (!menuAbierto) return;
+    requestAnimationFrame(girar);
+    const t = reloj.getElapsedTime();
+    modelo.g.rotation.y = Math.sin(t * 0.6) * 0.6;
+    modelo.cabeza.rotation.z = Math.sin(t * 0.8) * 0.05;
+    modelo.brazos[1].rotation.x = Math.sin(t * 1.3) * 0.15 - 0.1;
+    rendererInicio.render(escenaInicio, camInicio);
+  })();
+  document.getElementById('inicio-entrar').focus();
+}
+function cerrarMenu() {
+  menuAbierto = false;
+  inicio.hidden = true;
+}
+document.getElementById('inicio-entrar').addEventListener('click', cerrarMenu);
+document.getElementById('boton-skin').addEventListener('click', (e) => {
+  e.currentTarget.blur();
+  abrirMenu();
+});
+// Con el menu abierto, el teclado no mueve ni abre nada del juego (Tab si, para moverse entre botones).
+addEventListener(
+  'keydown',
+  (e) => {
+    if (!menuAbierto || e.code === 'Tab') return;
+    if (e.code === 'Escape') cerrarMenu();
+    e.stopImmediatePropagation(); // sin preventDefault: Enter y Espacio siguen apretando el boton enfocado
+  },
+  true,
+);
+abrirMenu();
+
 armarBarrios([]); // manzanas de la ciudad antes de que llegue la primera foto
 conectar();
 
@@ -3097,7 +3255,11 @@ function cuadro() {
     anillo.material.opacity = 0.8 * (1 - k);
   }
 
-  if (modo !== 'iso') colocarCamara(dt);
+  if (modo !== 'iso') {
+    colocarCamara(dt);
+    // Halloween: la camara se mece un poco, como si algo te siguiera.
+    if (eventoActualConfig?.id === 'halloween') camPersona.rotateZ(Math.sin(t * 0.7) * 0.025);
+  }
   buscarCercano();
 
   // Paredes que tapan: en isometrica, las del lado de la camara; en tercera
