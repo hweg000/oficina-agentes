@@ -67,7 +67,8 @@ controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_PAN };
 controls.minZoom = 0.6;
 controls.maxZoom = 4;
 
-scene.add(new THREE.HemisphereLight('#ffffff', '#c9b79c', 1.4));
+const hemi = new THREE.HemisphereLight('#ffffff', '#c9b79c', 1.4);
+scene.add(hemi);
 const sol = new THREE.DirectionalLight('#fff3e0', 1.6);
 sol.position.set(22, 36, 8);
 scene.add(sol);
@@ -115,6 +116,66 @@ farol.add(caja(0.14, 2.4, 0.14, '#3d4652', 0, 1.2, 0));
 farol.add(malla(new THREE.IcosahedronGeometry(0.28, 0), new THREE.MeshStandardMaterial({ color: '#fff3c4', emissive: '#ffd77a', emissiveIntensity: 0.8, flatShading: true }), 0, 2.5, 0));
 farol.position.set(-3.6, 0.18, 2.6);
 scene.add(farol);
+
+// ---------- dia y noche ----------
+// Sigue la hora de tu reloj. Para verlo sin esperar: ?hora=21 la fija, ?ciclo=2 da la vuelta al dia en 2 minutos.
+const paramsCielo = new URLSearchParams(location.search);
+const horaFija = paramsCielo.has('hora') ? ((Number(paramsCielo.get('hora')) % 24) + 24) % 24 : null;
+const minutosCiclo = Number(paramsCielo.get('ciclo')) || 0;
+// [hora, fondo, luz de arriba, luz de abajo, su intensidad, color del sol, su intensidad, luces encendidas 0-1]
+const momentos = [
+  [0, '#1d2542', '#5d6c9e', '#2b2a3a', 0.6, '#9aaee0', 0.35, 1],
+  [5, '#1d2542', '#5d6c9e', '#2b2a3a', 0.6, '#9aaee0', 0.35, 1],
+  [6.5, '#f1c7a6', '#ffd9c0', '#b9a58c', 1.0, '#ffb27a', 1.0, 0.3],
+  [9, '#dfe8f1', '#ffffff', '#c9b79c', 1.4, '#fff3e0', 1.6, 0],
+  [17, '#dfe8f1', '#ffffff', '#c9b79c', 1.4, '#fff3e0', 1.6, 0],
+  [18.5, '#f0b088', '#ffd2b0', '#b59a80', 1.1, '#ff9b5c', 1.1, 0.4],
+  [20, '#2a3156', '#6a76a8', '#33303f', 0.65, '#9aaad8', 0.4, 1],
+  [24, '#1d2542', '#5d6c9e', '#2b2a3a', 0.6, '#9aaee0', 0.35, 1],
+].map(([h, ...v]) => ({ h, v: v.map((x) => (typeof x === 'string' ? new THREE.Color(x) : x)) }));
+const luzFarol = new THREE.PointLight('#ffcf7a', 0, 10, 2);
+luzFarol.position.set(-3.6, 2.7, 2.6);
+scene.add(luzFarol);
+const bombilla = farol.children[1].material;
+const vidrioDia = new THREE.Color('#9fd3ff');
+const vidrioNoche = new THREE.Color('#ffc46b');
+const ahora = new Date();
+const horaInicio = ahora.getHours() + ahora.getMinutes() / 60;
+
+function horaDelDia(t) {
+  if (horaFija !== null) return horaFija;
+  if (minutosCiclo) return (horaInicio + (t * 24) / (minutosCiclo * 60)) % 24;
+  const d = new Date();
+  return d.getHours() + d.getMinutes() / 60;
+}
+
+let horaPintada = -1;
+function pintarCielo(t) {
+  const h = horaDelDia(t);
+  if (Math.abs(h - horaPintada) < 0.01) return; // cambia despacio: no hace falta recalcular cada cuadro
+  horaPintada = h;
+  const i = momentos.findIndex((m) => m.h > h);
+  const [a, b] = [momentos[i - 1], momentos[i]];
+  const k = (h - a.h) / (b.h - a.h);
+  const [fondo, arriba, abajo, intensidad, colorSol, intensidadSol, luces] = a.v.map((x, j) => (x.isColor ? x.clone().lerp(b.v[j], k) : x + (b.v[j] - x) * k));
+  scene.background.copy(fondo);
+  hemi.color.copy(arriba);
+  hemi.groundColor.copy(abajo);
+  hemi.intensity = intensidad;
+  sol.color.copy(colorSol);
+  sol.intensity = intensidadSol;
+  // De dia el sol y de noche la luna cruzan de este a oeste.
+  const arco = (((h + 18) % 12) / 12) * Math.PI;
+  sol.position.set(Math.cos(arco) * 30, 12 + Math.sin(arco) * 28, 8);
+  bombilla.emissiveIntensity = 0.8 + luces * 1.2;
+  luzFarol.intensity = luces * 14;
+  for (const sala of salas.values()) {
+    for (const v of sala.ventanas) {
+      v.emissive.copy(vidrioDia).lerp(vidrioNoche, luces);
+      v.emissiveIntensity = 0.35 + luces * 0.8;
+    }
+  }
+}
 
 function arbol(x, z, s) {
   const g = new THREE.Group();
@@ -346,7 +407,10 @@ function obtenerSala(nombre, dueno) {
     { grupo: fondo, eje: 'z', normal: new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), g.rotation.y), opacidad: 1 },
     { grupo: lado, eje: 'x', normal: new THREE.Vector3(-1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), g.rotation.y), opacidad: 1 },
   ];
-  const sala = { nombre, dueno, centro, g, interior, ang, cartel, muros, puestos: Array(PUESTOS.length).fill(null), escritorios: [] };
+  const ventanas = [];
+  for (const muro of [fondo, lado]) muro.traverse((o) => o.isMesh && o.material.isMeshStandardMaterial && ventanas.push(o.material));
+  horaPintada = -1; // la sala nueva toma la luz de la hora actual
+  const sala = { nombre, dueno, centro, g, interior, ang, cartel, muros, ventanas, puestos: Array(PUESTOS.length).fill(null), escritorios: [] };
   salas.set(nombre, sala);
   return sala;
 }
@@ -1809,6 +1873,7 @@ function cuadro() {
   const dt = Math.min(acumulado, 0.1);
   acumulado = 0;
   const t = reloj.elapsedTime;
+  pintarCielo(t);
   const yoCamina = moverYo(t, dt);
   mandarPosicion(t);
   moverOtros(t, dt);
