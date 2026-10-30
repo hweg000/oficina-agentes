@@ -93,6 +93,7 @@ function etiqueta(clase, html = '') {
 }
 
 // ---------- mundo ----------
+const antesDelMundo = scene.children.length; // lo que se agregue de aqui hasta los mapas es el paisaje de la isla
 let semilla = 11;
 const azar = () => (semilla = (semilla * 16807) % 2147483647) / 2147483647;
 
@@ -183,6 +184,11 @@ function pintarCielo(t) {
       v.emissiveIntensity = 0.35 + luces * 0.8;
     }
   }
+  for (const v of ventanasMapa) {
+    v.emissive.copy(vidrioDia).lerp(vidrioNoche, luces);
+    v.emissiveIntensity = 0.35 + luces * 0.8;
+  }
+  for (const f of focosMapa) f.emissiveIntensity = 0.2 + luces * 1.8;
 }
 
 function arbol(x, z, s) {
@@ -214,6 +220,229 @@ for (let i = 0; i < 26; i++) {
   roca.scale.y = 0.6;
   scene.add(roca);
 }
+
+// ---------- mapas: isla y ciudad ----------
+// Cada quien elige el suyo (boton Mapa, tecla M o ?mapa=ciudad) y se recuerda en este navegador.
+const NOMBRE_MAPA = { isla: 'Isla', ciudad: 'Ciudad' };
+const MAPA = (() => {
+  const pedido = new URLSearchParams(location.search).get('mapa');
+  if (NOMBRE_MAPA[pedido]) return pedido;
+  try {
+    const guardado = localStorage.getItem('oficina-mapa');
+    return NOMBRE_MAPA[guardado] ? guardado : 'isla';
+  } catch {
+    return 'isla';
+  }
+})();
+const ventanasMapa = []; // vidrios del mapa que de noche se ven encendidos, como los de las salas
+const focosMapa = []; // faroles que se prenden de noche
+const animarMapa = []; // funciones (t, dt) que se llaman cada cuadro
+
+if (MAPA !== 'isla') {
+  // Fuera la isla; la plaza y su farol se quedan de plaza central.
+  const quedan = [plaza, farol];
+  for (const o of scene.children.slice(antesDelMundo)) if (!o.isLight && !quedan.includes(o)) o.removeFromParent();
+  arboles.length = 0;
+  pisos.splice(pisos.indexOf(isla), 1);
+}
+
+// Ciudad: manzanas en cuadricula con la plaza en medio. Cada dueño tiene su edificio,
+// que sube de pisos conforme tiene mas proyectos; las demas manzanas son torres o parques.
+const CIUDAD = { celda: 40, lote: 32, radio: 1 };
+const LIMITE_CIUDAD = (CIUDAD.radio + 0.5) * CIUDAD.celda;
+const CELDAS = [];
+for (let cx = -CIUDAD.radio; cx <= CIUDAD.radio; cx++) for (let cz = -CIUDAD.radio; cz <= CIUDAD.radio; cz++) if (cx || cz) CELDAS.push([cx, cz]);
+// Primero las pegadas a la plaza y, entre ellas, las del lado de atras (la camara mira desde +x +z).
+const vueltaDe = ([x, z]) => Math.max(Math.abs(x), Math.abs(z));
+CELDAS.sort((a, b) => vueltaDe(a) - vueltaDe(b) || Math.abs(a[0]) + Math.abs(a[1]) - Math.abs(b[0]) - Math.abs(b[1]) || a[0] + a[1] - (b[0] + b[1]));
+const vidrioCiudad = new THREE.MeshStandardMaterial({ color: '#cfeaff', emissive: '#9fd3ff', emissiveIntensity: 0.35, flatShading: true });
+const rellenos = new THREE.Group(); // torres y parques de las manzanas sin dueño
+let llegasteAlEdificio = false;
+if (MAPA === 'ciudad') {
+  ventanasMapa.push(vidrioCiudad);
+  const { celda, lote, radio } = CIUDAD;
+  const suelo = caja(LIMITE_CIUDAD * 2, 0.1, LIMITE_CIUDAD * 2, '#5d646e', 0, -0.05, 0);
+  scene.add(suelo, rellenos);
+  pisos.push(suelo);
+  for (let cx = -radio; cx <= radio; cx++) {
+    for (let cz = -radio; cz <= radio; cz++) {
+      const banqueta = caja(lote, 0.06, lote, cx || cz ? '#c9ccd1' : '#a9cf8f', cx * celda, 0.03, cz * celda);
+      scene.add(banqueta);
+      pisos.push(banqueta);
+    }
+  }
+  // Raya amarilla al centro de cada calle.
+  for (let c = -radio; c < radio; c++) {
+    const s = (c + 0.5) * celda;
+    scene.add(caja(LIMITE_CIUDAD * 2, 0.02, 0.25, '#f2d16b', 0, 0.01, s), caja(0.25, 0.02, LIMITE_CIUDAD * 2, '#f2d16b', s, 0.01, 0));
+  }
+  // Faroles en una esquina de cada manzana.
+  const foco = new THREE.MeshStandardMaterial({ color: '#fff3c4', emissive: '#ffd77a', emissiveIntensity: 0.2, flatShading: true });
+  focosMapa.push(foco);
+  for (const [cx, cz] of [[0, 0], ...CELDAS]) {
+    const x = cx * celda + lote / 2 - 0.6;
+    const z = cz * celda + lote / 2 - 0.6;
+    scene.add(caja(0.16, 3.2, 0.16, '#3d4652', x, 1.6, z), malla(new THREE.IcosahedronGeometry(0.3, 0), foco, x, 3.3, z));
+  }
+  for (const [x, z] of [[-12, -12], [12, -12], [-12, 12], [12, 12]]) arbol(x, z, 1.1);
+
+  // Coches que dan la vuelta por las calles.
+  const COCHES = ['#e06c5a', '#5b8def', '#f2b134', '#3fb393', '#9b6fd6', '#fbfaf7', '#2b3440', '#e8689f'];
+  const coches = COCHES.map((color, i) => {
+    const g = new THREE.Group();
+    g.add(caja(2.3, 0.6, 1.15, color, 0, 0.5, 0));
+    g.add(caja(1.25, 0.5, 1.05, '#dfe8f1', -0.15, 1.05, 0));
+    for (const [x, z] of [[-0.75, 0.55], [0.75, 0.55], [-0.75, -0.55], [0.75, -0.55]]) g.add(caja(0.45, 0.4, 0.15, '#22272e', x, 0.22, z));
+    const calle = ((i % (radio * 2)) - radio + 0.5) * celda;
+    const sentido = i % 3 ? 1 : -1;
+    const eje = i % 2 ? 'x' : 'z';
+    g.rotation.y = eje === 'x' ? (sentido > 0 ? 0 : Math.PI) : (sentido > 0 ? -Math.PI / 2 : Math.PI / 2);
+    scene.add(g);
+    return { g, eje, sentido, calle: calle + sentido * 1.8 * (eje === 'x' ? 1 : -1), avance: ((i * 37) % (LIMITE_CIUDAD * 2)) - LIMITE_CIUDAD, vel: 6 + (i % 3) * 2 };
+  });
+  animarMapa.push((t, dt) => {
+    for (const c of coches) {
+      c.avance += c.sentido * c.vel * dt;
+      if (Math.abs(c.avance) > LIMITE_CIUDAD) c.avance = -Math.sign(c.avance) * LIMITE_CIUDAD;
+      if (c.eje === 'x') c.g.position.set(c.avance, 0, c.calle);
+      else c.g.position.set(c.calle, 0, c.avance);
+    }
+  });
+}
+
+// Torres en las manzanas libres de atras (sin tapar ningun edificio con dueño) y parques en las de adelante.
+function armarRellenos(ocupadas) {
+  for (const o of [...rellenos.children]) {
+    const i = arboles.indexOf(o);
+    if (i >= 0) arboles.splice(i, 1);
+    quitarDeEscena(o);
+  }
+  const { celda } = CIUDAD;
+  const ocupada = (x, z) => ocupadas.has(`${x},${z}`);
+  for (const [cx, cz] of CELDAS) {
+    if (ocupada(cx, cz)) continue;
+    const [x, z] = [cx * celda, cz * celda];
+    const h = hash(`${cx},${cz}`);
+    const tapa = ocupada(cx - 1, cz - 1) || ocupada(cx - 1, cz) || ocupada(cx, cz - 1);
+    if (cx + cz <= 0 && !tapa) {
+      const g = new THREE.Group();
+      const ancho = 14 + (h % 9);
+      const alto = 12 + (h % 19);
+      g.add(caja(ancho, alto, ancho, PAREDES[h % PAREDES.length], 0, alto / 2, 0));
+      for (let y = 2.2; y < alto - 1; y += 3.2) g.add(malla(new THREE.BoxGeometry(ancho + 0.08, 1.1, ancho + 0.08), vidrioCiudad, 0, y, 0));
+      g.add(caja(ancho + 0.6, 0.4, ancho + 0.6, '#9aa6b2', 0, alto + 0.2, 0));
+      g.position.set(x, 0, z);
+      g.userData.solido = [x - ancho / 2, x + ancho / 2, z - ancho / 2, z + ancho / 2];
+      rellenos.add(g);
+    } else {
+      const pasto = caja(CIUDAD.lote - 4, 0.08, CIUDAD.lote - 4, '#a9cf8f', x, 0.07, z);
+      rellenos.add(pasto);
+      for (let k = 0; k < 3; k++) {
+        arbol(x + ((h >> k) % 24) - 12, z + ((h >> (k + 3)) % 24) - 12, 0.9 + (k % 2) * 0.4);
+        rellenos.add(arboles.at(-1));
+      }
+    }
+  }
+}
+
+// El edificio de cada dueño: piso, dos muros altos con ventanas (los del lado de atras,
+// asi no tapan las oficinas), columna de esquina y marquesina con su color.
+function crecerCiudad() {
+  for (const [dueno, b] of barrios) {
+    const n = Math.max(1, [...salas.values()].filter((s) => s.dueno === dueno).length);
+    const filas = Math.ceil(n / 2);
+    const pisosEdificio = filas + 1;
+    const alto = pisosEdificio * 3.2;
+    const [x0, x1] = [b.x - 12.2, b.x + 12.2];
+    const zFrente = b.z + 13;
+    const zFondo = b.z + 6 - (filas - 1) * 12 - 5.6; // shortcut: con mas de 4 proyectos el edificio se sale de su manzana
+    const [cx, cz, w, d] = [b.x, (zFondo + zFrente) / 2, x1 - x0, zFrente - zFondo];
+    if (b.edificio) quitarDeEscena(b.edificio);
+    const g = new THREE.Group();
+    const muro = '#d5dbe2';
+    g.add(caja(w, 0.02, d, '#e3e6ea', cx, 0.07, cz));
+    g.add(caja(w, alto, 0.4, muro, cx, alto / 2, zFondo), caja(0.4, alto, d, muro, x0, alto / 2, cz));
+    for (let p = 1; p < pisosEdificio; p++) {
+      const y = p * 3.2 + 1.6;
+      g.add(malla(new THREE.BoxGeometry(w - 1.5, 1.2, 0.05), vidrioCiudad, cx, y, zFondo + 0.22));
+      g.add(malla(new THREE.BoxGeometry(0.05, 1.2, d - 1.5), vidrioCiudad, x0 + 0.22, y, cz));
+      g.add(caja(w, 0.12, 0.5, '#fbfaf7', cx, p * 3.2, zFondo + 0.2), caja(0.5, 0.12, d, '#fbfaf7', x0 + 0.2, p * 3.2, cz));
+    }
+    g.add(caja(w + 0.6, 0.35, 0.8, '#9aa6b2', cx, alto + 0.17, zFondo), caja(0.8, 0.35, d + 0.6, '#9aa6b2', x0, alto + 0.17, cz));
+    g.add(caja(0.6, alto, 0.6, '#9aa6b2', x1, alto / 2, zFrente));
+    const color = COLORES[hash(dueno) % COLORES.length];
+    g.add(caja(7, 0.25, 2.6, color, cx, 3.3, zFrente + 1.1));
+    g.add(caja(0.15, 3.2, 0.15, '#3d4652', cx - 3.3, 1.6, zFrente + 2.2), caja(0.15, 3.2, 0.15, '#3d4652', cx + 3.3, 1.6, zFrente + 2.2));
+    scene.add(g);
+    b.edificio = g;
+    b.solidos = [[x0 - 0.2, x0 + 0.2, zFondo, zFrente], [x0, x1, zFondo - 0.2, zFondo + 0.2], [x1 - 0.3, x1 + 0.3, zFrente - 0.3, zFrente + 0.3]];
+    b.letrero.position.set(cx, alto + 1.6, zFondo);
+  }
+}
+
+// Lo que cambia entre mapas: donde va cada dueño y cada sala, que se arma al cambiar
+// los dueños, como crece al llegar una sala nueva y por donde no se puede caminar.
+const DISENO = {
+  isla: {
+    centro(k, n) {
+      if (n <= 1) return { x: 0, z: 0 };
+      const R = Math.max(28, 22 / Math.sin(Math.PI / n)); // shortcut: con mas de 5 dueños los barrios se salen de la isla
+      const a = (k / n) * Math.PI * 2;
+      return { x: Math.sin(a) * R, z: Math.cos(a) * R };
+    },
+    sala(i) {
+      const vuelta = Math.floor(i / 6);
+      const ang = ((i % 6) / 6) * Math.PI * 2 + Math.PI / 6 + vuelta * (Math.PI / 6);
+      const r = 15 + vuelta * 13; // shortcut: mas de 12 proyectos a la vez chocarian con los arboles
+      return { x: Math.sin(ang) * r, z: Math.cos(ang) * r, rot: ang + Math.PI, camino: r };
+    },
+    armar(duenos) {
+      if (duenos.length < 2) return;
+      for (const [dueno, b] of barrios) {
+        const placita = malla(new THREE.CylinderGeometry(4.2, 4.4, 0.06, 24), COLORES[hash(dueno) % COLORES.length], b.x, 0.03, b.z);
+        placita.material = placita.material.clone();
+        placita.material.transparent = true;
+        placita.material.opacity = 0.35;
+        const letrero = etiqueta('etiqueta-sala', `<b>Barrio de ${esc(dueno || 'anfitrión')}</b>`);
+        letrero.position.set(b.x, 1.2, b.z);
+        scene.add(placita, letrero);
+        b.adornos.push(placita, letrero);
+      }
+    },
+    bloquea: (x, z) => Math.hypot(x, z) > 58,
+  },
+  ciudad: {
+    centro(k) {
+      const [cx, cz] = CELDAS[k % CELDAS.length];
+      const [x, z] = [cx * CIUDAD.celda, cz * CIUDAD.celda];
+      return { x, z, celda: `${cx},${cz}`, entrada: { x, z: z + 15.5 } };
+    },
+    sala: (i) => ({ x: ((i % 2) - 0.5) * 12, z: 6 - Math.floor(i / 2) * 12, rot: 0 }),
+    armar() {
+      for (const [dueno, b] of barrios) {
+        b.letrero = etiqueta('etiqueta-sala', `<b>${esMia({ dueno }) ? 'Tu edificio' : `Edificio de ${esc(dueno)}`}</b>`);
+        scene.add(b.letrero);
+        b.adornos.push(b.letrero);
+      }
+      armarRellenos(new Set([...barrios.values()].map((b) => b.celda)));
+      // La primera vez apareces en la puerta de tu edificio, no en la plaza.
+      const mio = barrios.get(miNombre) || barrios.get('');
+      if (mio && !llegasteAlEdificio) {
+        llegasteAlEdificio = true;
+        yo.g.position.set(mio.entrada.x, 0, mio.entrada.z);
+        objetivoCamara = yo.g.position.clone();
+      }
+    },
+    crecer: crecerCiudad,
+    bloquea(x, z) {
+      if (Math.abs(x) > LIMITE_CIUDAD - 1 || Math.abs(z) > LIMITE_CIUDAD - 1) return true;
+      const en = ([x0, x1, z0, z1]) => x > x0 - 0.3 && x < x1 + 0.3 && z > z0 - 0.3 && z < z1 + 0.3;
+      for (const b of barrios.values()) if ((b.solidos || []).some(en)) return true;
+      return rellenos.children.some((o) => o.userData.solido && en(o.userData.solido));
+    },
+  },
+}[MAPA];
+const pisosBase = pisos.length; // el resto de pisos son de las salas (y se rehacen con los barrios)
 
 // Sombra falsa (un circulo) en vez de sombras reales: mucho mas barato.
 const sombraGeo = new THREE.CircleGeometry(0.42, 12);
@@ -298,16 +527,11 @@ function quitarDeEscena(obj) {
   obj.traverse((o) => o.isCSS2DObject && o.element.remove());
 }
 
-// ---------- barrios: un pedazo de isla por dueño ----------
-// Con un solo dueño todo queda alrededor de la plaza, como siempre; con varios, cada uno
-// tiene su barrio (su placita y sus salas) en un anillo alrededor de la plaza del centro.
+// ---------- barrios: un pedazo del mapa por dueño ----------
+// En la isla, con un solo dueño todo queda alrededor de la plaza; con varios, cada uno tiene
+// su barrio en un anillo alrededor de la plaza. En la ciudad cada dueño tiene su edificio.
 let barrios = new Map(); // dueno -> { x, z, adornos }
-function centroBarrio(k, n) {
-  if (n <= 1) return { x: 0, z: 0 };
-  const R = Math.max(28, 22 / Math.sin(Math.PI / n)); // shortcut: con mas de 5 dueños los barrios se salen de la isla
-  const a = (k / n) * Math.PI * 2;
-  return { x: Math.sin(a) * R, z: Math.cos(a) * R };
-}
+const centroBarrio = (k, n) => DISENO.centro(k, n);
 
 function armarBarrios(duenos) {
   for (const p of [...personas.values()]) quitarPersona(p);
@@ -316,32 +540,21 @@ function armarBarrios(duenos) {
     quitarDeEscena(sala.cartel);
   }
   salas.clear();
-  pisos.length = 2; // isla y plaza
-  for (const b of barrios.values()) b.adornos.forEach(quitarDeEscena);
+  pisos.length = pisosBase;
+  for (const b of barrios.values()) {
+    b.adornos.forEach(quitarDeEscena);
+    if (b.edificio) quitarDeEscena(b.edificio);
+  }
   for (const a of arboles) a.visible = true;
   barrios = new Map(duenos.map((d, k) => [d, { ...centroBarrio(k, duenos.length), adornos: [] }]));
-  if (duenos.length < 2) return;
-  for (const [dueno, b] of barrios) {
-    const placita = malla(new THREE.CylinderGeometry(4.2, 4.4, 0.06, 24), COLORES[hash(dueno) % COLORES.length], b.x, 0.03, b.z);
-    placita.material = placita.material.clone();
-    placita.material.transparent = true;
-    placita.material.opacity = 0.35;
-    const letrero = etiqueta('etiqueta-sala', `<b>Barrio de ${esc(dueno || 'anfitrión')}</b>`);
-    letrero.position.set(b.x, 1.2, b.z);
-    scene.add(placita, letrero);
-    b.adornos.push(placita, letrero);
-  }
+  DISENO.armar(duenos);
+  DISENO.crecer?.();
 }
 
 // ---------- salas ----------
 const salas = new Map();
 
-function posicionSala(i) {
-  const vuelta = Math.floor(i / 6);
-  const ang = ((i % 6) / 6) * Math.PI * 2 + Math.PI / 6 + vuelta * (Math.PI / 6);
-  const r = 15 + vuelta * 13; // shortcut: mas de 12 proyectos a la vez chocarian con los arboles
-  return { x: Math.sin(ang) * r, z: Math.cos(ang) * r, ang, r };
-}
+const posicionSala = (i) => DISENO.sala(i);
 
 function planta(x, z) {
   const g = new THREE.Group();
@@ -356,13 +569,12 @@ function obtenerSala(nombre, dueno) {
   if (salas.has(nombre)) return salas.get(nombre);
   const centro = barrios.get(dueno) || { x: 0, z: 0 };
   const pos = posicionSala([...salas.values()].filter((s) => s.dueno === dueno).length);
-  const { ang, r } = pos;
   const x = centro.x + pos.x;
   const z = centro.z + pos.z;
   for (const a of arboles) if (Math.hypot(a.position.x - x, a.position.z - z) < 8) a.visible = false;
   const g = new THREE.Group();
   g.position.set(x, 0, z);
-  g.rotation.y = ang + Math.PI; // +z local apunta a la plaza
+  g.rotation.y = pos.rot; // +z local apunta a la puerta
   scene.add(g);
   const h = hash(nombre);
   const pared = PAREDES[h % PAREDES.length];
@@ -395,8 +607,8 @@ function obtenerSala(nombre, dueno) {
   librero.position.set(-MITAD + 0.5, 0.25, -1.4);
   g.add(librero);
 
-  // Camino de piedras hasta la plaza.
-  for (let d = MITAD + 0.9; d < r - 5.2; d += 1.15) {
+  // Camino de piedras hasta la plaza (solo en la isla).
+  for (let d = MITAD + 0.9; d < (pos.camino || 0) - 5.2; d += 1.15) {
     const piedra = malla(new THREE.CylinderGeometry(0.42, 0.46, 0.08, 7), '#e7dfd1', (hash(nombre + d) % 5) * 0.08 - 0.16, 0.04, d);
     piedra.castShadow = false;
     g.add(piedra);
@@ -418,8 +630,9 @@ function obtenerSala(nombre, dueno) {
   const ventanas = [];
   for (const muro of [fondo, lado]) muro.traverse((o) => o.isMesh && o.material.isMeshStandardMaterial && ventanas.push(o.material));
   horaPintada = -1; // la sala nueva toma la luz de la hora actual
-  const sala = { nombre, dueno, centro, g, interior, ang, cartel, muros, ventanas, puestos: Array(PUESTOS.length).fill(null), escritorios: [] };
+  const sala = { nombre, dueno, centro, g, interior, cartel, muros, ventanas, puestos: Array(PUESTOS.length).fill(null), escritorios: [] };
   salas.set(nombre, sala);
+  DISENO.crecer?.();
   if (typeof decorarSalaEstacional === 'function') decorarSalaEstacional(sala);
   return sala;
 }
@@ -500,7 +713,8 @@ function nuevaPersona(id, e) {
   } else {
     // Llega caminando desde la puerta.
     const [entrada, puerta] = rutaSalida(p);
-    p.g.position.copy(puerta).lerp(new THREE.Vector3(sala.centro.x, 0.18, sala.centro.z), 0.25);
+    const llegada = sala.centro.entrada || sala.centro; // en la ciudad se llega desde la calle, no del centro del edificio
+    p.g.position.copy(puerta).lerp(new THREE.Vector3(llegada.x, 0.18, llegada.z), 0.25);
     p.ruta = [puerta, entrada, asiento];
     p.lugar = 'llegando';
   }
@@ -524,7 +738,8 @@ function sincronizar(foto) {
   fotoActual = foto;
   // Si llega o se va un dueño, se rehace el reparto de barrios (los agentes reaparecen en su escritorio).
   const duenos = [...new Set(foto.sesiones.map((s) => s.dueno || ''))].sort();
-  if (duenos.join('\n') !== [...barrios.keys()].join('\n')) {
+  // (con el tamaño tambien: [''] y [] se ven iguales unidos con join)
+  if (duenos.length !== barrios.size || duenos.join('\n') !== [...barrios.keys()].join('\n')) {
     armarBarrios(duenos);
     primeraFoto = true;
   }
@@ -558,7 +773,7 @@ let miNombre = null;
 const esMia = (s) => !s.dueno || s.dueno === miNombre;
 function anfitrionDe(s) {
   if (esMia(s)) return yo.g;
-  for (const o of otros.values()) if (o.meta.nombre === s.dueno) return o.c.g;
+  for (const o of otros.values()) if (o.meta.nombre === s.dueno && o.c.g.visible) return o.c.g; // si anda en otro mapa, no
   return null;
 }
 
@@ -981,6 +1196,9 @@ function sincronizarJugadores(lista) {
       otros.set(k, o);
     }
     o.meta = j;
+    // Quien anda en otro mapa no se dibuja: sus coordenadas son de alla.
+    o.c.g.visible = (j.mapa || 'isla') === MAPA;
+    o.e.visible = o.c.g.visible; // CSS2D no hereda la visibilidad del padre
   }
   for (const [k, o] of otros) {
     if (vivos.has(k)) continue;
@@ -1075,7 +1293,7 @@ function mandarPosicion(t) {
   ultimaPos = pos;
   ultimoEnvio = t;
   const [px, py, pz, ry] = pos.split(',').map(Number);
-  fetch(rutaConNombre('/posicion'), { method: 'POST', body: JSON.stringify({ id: miId, x: px, y: py, z: pz, ry }) }).catch(() => {});
+  fetch(rutaConNombre('/posicion'), { method: 'POST', body: JSON.stringify({ id: miId, x: px, y: py, z: pz, ry, mapa: MAPA }) }).catch(() => {});
 }
 
 // ---------- ruleta de gestos ----------
@@ -2532,9 +2750,9 @@ aplicarEventoEstacional();
 const MODOS = ['iso', 'tercera', 'primera'];
 const NOMBRE_MODO = { iso: 'Isométrica', tercera: 'Tercera persona', primera: 'Primera persona' };
 const AYUDA_MODO = {
-  iso: 'Clic en el piso: caminas · clic en un agente: vas a verlo · arrastra: mueves la vista · rueda: zoom · V: cambiar vista · G: gestos',
-  tercera: 'Clic: mirar con el mouse · W A S D: caminar (Shift corre) · E: hablar · Esc: soltar el mouse · V: cambiar vista · G: gestos',
-  primera: 'Clic: mirar con el mouse · W A S D: caminar (Shift corre) · E: hablar · Esc: soltar el mouse · V: cambiar vista · G: gestos',
+  iso: 'Clic en el piso: caminas · clic en un agente: vas a verlo · arrastra: mueves la vista · rueda: zoom · V: cambiar vista · M: mapa · G: gestos',
+  tercera: 'Clic: mirar con el mouse · W A S D: caminar (Shift corre) · E: hablar · Esc: soltar el mouse · V: cambiar vista · M: mapa · G: gestos',
+  primera: 'Clic: mirar con el mouse · W A S D: caminar (Shift corre) · E: hablar · Esc: soltar el mouse · V: cambiar vista · M: mapa · G: gestos',
 };
 const camPersona = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.1, 140);
 // Niebla siempre puesta (quitarla y ponerla recompila los shaders = tiron);
@@ -2578,6 +2796,19 @@ function cambiarModo(nuevo) {
   botonModo.textContent = `Vista: ${NOMBRE_MODO[modo]}`;
   ayuda.textContent = AYUDA_MODO[modo];
 }
+// Cambiar de mapa recarga la pagina: cada mapa arma su mundo desde cero.
+const botonMapa = document.getElementById('boton-mapa');
+botonMapa.textContent = `Mapa: ${NOMBRE_MAPA[MAPA]}`;
+botonMapa.addEventListener('click', () => {
+  const nombres = Object.keys(NOMBRE_MAPA);
+  const siguiente = nombres[(nombres.indexOf(MAPA) + 1) % nombres.length];
+  try {
+    localStorage.setItem('oficina-mapa', siguiente);
+  } catch {}
+  const u = new URL(location.href);
+  u.searchParams.set('mapa', siguiente);
+  location.href = u;
+});
 botonModo.addEventListener('click', () => {
   cambiarModo(MODOS[(MODOS.indexOf(modo) + 1) % MODOS.length]);
   botonModo.blur(); // que la barra espaciadora no lo vuelva a apretar
@@ -2611,6 +2842,7 @@ addEventListener('keydown', (e) => {
     }
   }
   if (e.code === 'KeyV' && !e.repeat) botonModo.click();
+  if (e.code === 'KeyM' && !e.repeat) botonMapa.click();
   if (e.code === 'KeyE' && !e.repeat && modo !== 'iso') hablarConCercano();
   teclas.add(e.code);
 });
@@ -2624,11 +2856,11 @@ document.addEventListener('mousemove', (e) => {
   vista.pitch = Math.min(max, Math.max(min, vista.pitch - e.movementY * 0.0025));
 });
 
-// Choques: paredes, librero y escritorios de cada sala, y la orilla de la isla.
+// Choques: paredes, librero y escritorios de cada sala, y la orilla o los muros del mapa.
 const RADIO = 0.3;
 const local = new THREE.Vector3();
 function choca(x, z) {
-  if (Math.hypot(x, z) > 58) return true;
+  if (DISENO.bloquea(x, z)) return true;
   for (const sala of salas.values()) {
     local.set(x, 0, z);
     sala.interior.worldToLocal(local);
@@ -2821,6 +3053,7 @@ function conectar() {
     conexion.textContent = 'Sin conexión';
   };
 }
+armarBarrios([]); // manzanas de la ciudad antes de que llegue la primera foto
 conectar();
 
 // ---------- bucle ----------
@@ -2842,6 +3075,7 @@ function cuadro() {
   ubicarVisitantes();
   for (const p of personas.values()) animarPersona(p, t, dt);
   animarEventoEstacional(t, dt);
+  for (const f of animarMapa) f(t, dt);
 
   const gestoYo = actualizarGesto(yo, t, dt);
 

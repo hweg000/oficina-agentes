@@ -77,6 +77,14 @@ Aquí no se atraviesan paredes ni escritorios.
 - **Arrastrar:** mueve la vista. **Rueda:** zoom.
 - Los agentes que te buscan van a donde esté tu avatar.
 - **G o botón "Gestos":** abre la ruleta de expresiones y gestos.
+- **M o botón "Mapa":** cambia de mapa (se recuerda en tu navegador; también `?mapa=isla|ciudad`).
+
+## Mapas
+
+- **Isla:** la de siempre. Cada proyecto es una sala alrededor de la plaza, y si hay varios dueños cada uno tiene su barrio.
+- **Ciudad:** calles con coches, plaza central, parques y torres. Cada usuario tiene su edificio con sus proyectos como oficinas adentro, y el edificio sube de pisos mientras más proyectos tenga. Al entrar apareces en la puerta de tu edificio.
+
+Cada quien ve el mapa que eligió: los amigos que están en otro mapa no aparecen caminando en el tuyo.
 
 ## Eventos y Festividades del Año
 

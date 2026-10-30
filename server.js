@@ -138,10 +138,12 @@ const server = http.createServer((req, res) => {
         if (texto) mandarChat({ id: String(id || '').slice(0, 40), nombre, texto, t: Date.now() });
       });
     }
-    return leerJson(req, res, 1000, ({ id, x, y, z, ry }) => {
+    return leerJson(req, res, 1000, ({ id, x, y, z, ry, mapa }) => {
       const n = [x, y, z, ry].map(Number);
       if (typeof id === 'string' && id.length <= 40 && n.every((v) => Number.isFinite(v) && Math.abs(v) < 500)) {
-        jugadores.set(`${nombre}:${id}`, { id, nombre, x: n[0], y: n[1], z: n[2], ry: n[3], ultimo: Date.now() });
+        // Cada quien elige su mapa: las coordenadas solo valen entre quienes ven el mismo.
+        mapa = typeof mapa === 'string' ? mapa.slice(0, 12) : 'isla';
+        jugadores.set(`${nombre}:${id}`, { id, nombre, x: n[0], y: n[1], z: n[2], ry: n[3], mapa, ultimo: Date.now() });
         emitirJugadores();
       }
     });

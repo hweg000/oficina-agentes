@@ -130,6 +130,8 @@
   #boton-gestos { position: fixed; left: 190px; bottom: 56px; border: 0; border-radius: 999px; padding: 8px 14px; font: inherit; font-size: 13px; font-weight: 800; background: #2b3440; color: #fff; box-shadow: var(--sombra); cursor: pointer; transition: transform 0.15s, background 0.15s; }
   #boton-gestos:hover { background: #3d4a5c; transform: translateY(-1px); }
   #boton-gestos:active { transform: translateY(1px); }
+  #boton-mapa { position: fixed; left: 300px; bottom: 56px; border: 0; border-radius: 999px; padding: 8px 14px; font: inherit; font-size: 13px; font-weight: 800; background: #2b3440; color: #fff; box-shadow: var(--sombra); cursor: pointer; }
+  #boton-mapa:hover { background: #3d4a5c; }
 
   /* Globo de gesto sobre la cabeza de los personajes */
   .globo-gesto { pointer-events: none; padding: 6px 12px; border-radius: 999px; background: rgba(255, 255, 255, 0.95); box-shadow: var(--sombra); border: 2px solid var(--acento); font-size: 13px; font-weight: 800; color: var(--texto); display: flex; align-items: center; gap: 6px; white-space: nowrap; animation: popGesto 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
@@ -212,6 +214,7 @@
     #titulo { display: none; }
     #chat { bottom: auto; top: 64px; }
     #boton-gestos { left: 160px; }
+    #boton-mapa { left: 16px; bottom: 100px; }
     .ruleta-rueda { width: 300px; height: 300px; }
   }
 </style>
@@ -227,10 +230,11 @@
   <button id="aviso" type="button"></button>
   <div id="avisos" aria-live="polite"></div>
   <div id="vacio"><b>Nadie trabajando por ahora</b><span>Abre Claude Code en cualquier proyecto y aquí aparecerá su escritorio.</span></div>
-  <div id="titulo">Clic en el piso: caminas · clic en un agente: vas a verlo · arrastra: mueves la vista · rueda: zoom · V: cambiar vista · G: gestos</div>
+  <div id="titulo">Clic en el piso: caminas · clic en un agente: vas a verlo · arrastra: mueves la vista · rueda: zoom · V: cambiar vista · M: mapa · G: gestos</div>
   <div id="tarjeta" role="dialog" aria-live="polite"></div>
   <button id="modo" type="button" title="Cambiar vista (V)">Vista: Isométrica</button>
   <button id="boton-gestos" type="button" title="Ruleta de gestos (G)">Gestos (G)</button>
+  <button id="boton-mapa" type="button" title="Cambiar mapa (M)">Mapa: Isla</button>
   <div id="accion" aria-live="polite"></div>
   <form id="chat">
     <ol id="mensajes" aria-live="polite"></ol>
