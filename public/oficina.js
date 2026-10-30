@@ -2905,9 +2905,9 @@ aplicarEventoEstacional();
 const MODOS = ['iso', 'tercera', 'primera'];
 const NOMBRE_MODO = { iso: 'Isométrica', tercera: 'Tercera persona', primera: 'Primera persona' };
 const AYUDA_MODO = {
-  iso: 'Clic en el piso: caminas · clic en un agente: vas a verlo · arrastra: mueves la vista · rueda: zoom · V: cambiar vista · M: mapa · G: gestos',
-  tercera: 'Clic: mirar con el mouse · W A S D: caminar (Shift corre) · E: hablar · Esc: soltar el mouse · V: cambiar vista · M: mapa · G: gestos',
-  primera: 'Clic: mirar con el mouse · W A S D: caminar (Shift corre) · E: hablar · Esc: soltar el mouse · V: cambiar vista · M: mapa · G: gestos',
+  iso: 'Clic en el piso: caminas · clic en un agente: vas a verlo · arrastra: mueves la vista · rueda: zoom · V: cambiar vista · M: mapa · G: gestos · Tab: quién está en línea',
+  tercera: 'Clic: mirar con el mouse · W A S D: caminar (Shift corre) · E: hablar · Esc: soltar el mouse · V: cambiar vista · M: mapa · G: gestos · Tab: quién está en línea',
+  primera: 'Clic: mirar con el mouse · W A S D: caminar (Shift corre) · E: hablar · Esc: soltar el mouse · V: cambiar vista · M: mapa · G: gestos · Tab: quién está en línea',
 };
 const camPersona = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.1, 140);
 // Niebla siempre puesta (quitarla y ponerla recompila los shaders = tiron);
@@ -3267,6 +3267,30 @@ function recibirConectados(nombres) {
   enPagina = ahora;
   pintarPanel();
 }
+
+// Tab (mientras lo mantienes): quienes tienen la oficina abierta, en que mapa andan y como va su Claude.
+const tabla = document.getElementById('tabla');
+function pintarTabla() {
+  // El mapa sale de la ultima posicion de cada quien; con la pestaña en segundo plano no manda y no se sabe.
+  const mapaDe = (n) => [...otros.values()].find((o) => o.meta.nombre === n)?.meta.mapa || null;
+  const filas = [[miNombre || 'Tú', MAPA, true], ...[...(enPagina || [])].sort((a, b) => a.localeCompare(b)).map((n) => [n, mapaDe(n), false])];
+  const celdaMapa = (m) => (m ? `${m === MAPA ? '📍 ' : ''}${esc(NOMBRE_MAPA[m] || m)}` : '<span class="nd">Sin datos</span>');
+  tabla.innerHTML = `<h2>En línea <span>${filas.length}</span></h2>
+    <table><thead><tr><th>Jugador</th><th>Mapa</th><th>Claude</th></tr></thead><tbody>${filas
+      .map(([n, m, tu]) => `<tr${tu ? ' class="tu"' : ''}><td>${esc(n)}${tu ? ' <small>(tú)</small>' : ''}</td><td>${celdaMapa(m)}</td><td data-claude="${claudeDe(n)}">${CLAUDE[claudeDe(n)]}</td></tr>`)
+      .join('')}</tbody></table>
+    <p>📍 = en tu mismo mapa</p>`;
+}
+addEventListener('keydown', (e) => {
+  if (e.code !== 'Tab' || menuAbierto || e.target.closest?.('input, select, textarea, #inicio')) return;
+  e.preventDefault(); // que Tab no se ponga a saltar entre botones
+  if (e.repeat) return;
+  pintarTabla();
+  tabla.hidden = false;
+});
+addEventListener('keyup', (e) => e.code === 'Tab' && (tabla.hidden = true));
+addEventListener('blur', () => (tabla.hidden = true));
+setInterval(() => !tabla.hidden && pintarTabla(), 1000);
 
 // Avisa cuando el Claude de un amigo pasa de apagado a encendido o al reves (no por cada herramienta).
 function revisarClaude() {
