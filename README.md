@@ -76,6 +76,24 @@ Aquí no se atraviesan paredes ni escritorios.
   de ese proyecto. La respuesta se da en Claude Code; la oficina solo muestra.
 - **Arrastrar:** mueve la vista. **Rueda:** zoom.
 - Los agentes que te buscan van a donde esté tu avatar.
+- **G o botón "Gestos":** abre la ruleta de expresiones y gestos.
+
+## Eventos y Festividades del Año
+
+El mapa se decora **100% automáticamente según la fecha actual** de tu reloj, sin menús invasivos en pantalla:
+
+- **🎃 Halloween (Todo Octubre):** césped otoñal, farol con luz de calabaza, calabazas Jack-o'-lantern con vela parpadeante en la plaza y en las entradas de las salas, y murciélagos en los libreros.
+  - **El Mero Día (31 de Octubre):** escenario especial en la plaza con un **Gran Caldero de Bruja** con poción verde brillante burbujeante, **lápidas de cementerio**, un **fantasma flotante translúcido** y banner festivo.
+- **🌼 Día de Muertos (1 al 3 de Noviembre):** ramilletes de flores de cempasúchil en los caminos y plaza, tiras de papel picado festivo en las paredes de las salas y veladoras encendidas.
+  - **El Mero Día (1 y 2 de Noviembre):** **Gran Altar Monumental de 3 niveles** en la plaza con arcos florales de cempasúchil, calaveritas de azúcar, pan de muerto tradicional, ofrendas y camino ceremonial de pétalos.
+- **🎄 Navidad (Todo Diciembre y hasta el 6 de Enero):** manto de nieve blanca sobre toda la isla, copas de árboles con escarcha nevada, coronas navideñas de pino con lazo rojo en las salas y guirnaldas de luces parpadeantes.
+  - **El Mero Día (24 y 25 de Diciembre):** **Gran Árbol Navideño Gigante** con estrella dorada giratoria, montaña de regalos con lazos de colores, un **Muñeco de Nieve (Frosty)** y **copos de nieve cayendo en tiempo real** por todo el mapa.
+
+### Comando para abrir el menú de selección (Opcional):
+Por defecto todo corre automáticamente según el calendario real sin botones en pantalla. Si deseas abrir el menú para probar o forzar una festividad:
+- Escribe el comando **/eventos** (o **/menu**) en el chat (presiona `Enter` para abrir el chat y escribe `/eventos`).
+- O en la consola del navegador: `window.eventos()`.
+- O por URL: `?menu=1` o fijando fechas con `?fecha=10-31`, `?evento=navidad&especial=1`.
 
 ## Conectar Claude Code (hooks globales)
 

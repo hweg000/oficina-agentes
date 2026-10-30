@@ -97,14 +97,20 @@ let semilla = 11;
 const azar = () => (semilla = (semilla * 16807) % 2147483647) / 2147483647;
 
 const isla = malla(new THREE.CylinderGeometry(64, 60, 3, 32), '#b9d8a3', 0, -1.5, 0);
+isla.material = isla.material.clone();
 isla.castShadow = false;
 scene.add(isla);
 const orilla = malla(new THREE.CylinderGeometry(60, 52, 6, 32), '#c9a77e', 0, -6, 0);
+orilla.material = orilla.material.clone();
 scene.add(orilla);
 
 const plaza = malla(new THREE.CylinderGeometry(4.8, 5, 0.18, 24), '#f1e7d6', 0, 0.09, 0);
+plaza.material = plaza.material.clone();
 scene.add(plaza);
 const pisos = [isla, plaza]; // donde tu avatar puede caminar con clic
+const COLOR_ISLA_ORIG = isla.material.color.clone();
+const COLOR_ORILLA_ORIG = orilla.material.color.clone();
+const COLOR_PLAZA_ORIG = plaza.material.color.clone();
 for (let i = 0; i < 8; i++) {
   const a = (i / 8) * Math.PI * 2 + 0.2;
   const arbusto = malla(new THREE.IcosahedronGeometry(0.55, 0), i % 2 ? '#79b46c' : '#68a77a', Math.sin(a) * 4.4, 0.45, Math.cos(a) * 4.4);
@@ -137,6 +143,8 @@ const luzFarol = new THREE.PointLight('#ffcf7a', 0, 10, 2);
 luzFarol.position.set(-3.6, 2.7, 2.6);
 scene.add(luzFarol);
 const bombilla = farol.children[1].material;
+const COLOR_FAROL_ORIG = bombilla.color.clone();
+const COLOR_LUZ_FAROL_ORIG = luzFarol.color.clone();
 const vidrioDia = new THREE.Color('#9fd3ff');
 const vidrioNoche = new THREE.Color('#ffc46b');
 const ahora = new Date();
@@ -272,7 +280,7 @@ function crearPersona(color, { ayudante = false, semillaId = '' } = {}) {
 
 // Tu avatar en la plaza.
 const yo = crearPersona('#f2b134', { semillaId: 'yo' });
-yo.g.position.set(0, 0.18, 0);
+yo.g.position.set(0, 0.18, 2.5);
 yo.g.rotation.y = Math.atan2(camera.position.x, camera.position.z);
 scene.add(yo.g);
 const etiquetaYo = etiqueta('etiqueta-yo', 'Tú');
@@ -412,6 +420,7 @@ function obtenerSala(nombre, dueno) {
   horaPintada = -1; // la sala nueva toma la luz de la hora actual
   const sala = { nombre, dueno, centro, g, interior, ang, cartel, muros, ventanas, puestos: Array(PUESTOS.length).fill(null), escritorios: [] };
   salas.set(nombre, sala);
+  if (typeof decorarSalaEstacional === 'function') decorarSalaEstacional(sala);
   return sala;
 }
 
@@ -1037,7 +1046,15 @@ function globos() {
 formChat.addEventListener('submit', (e) => {
   e.preventDefault();
   const texto = escribir.value.trim();
-  if (texto) fetch(rutaConNombre('/chat'), { method: 'POST', body: JSON.stringify({ id: miId, texto }) }).catch(() => {});
+  if (!texto) return;
+  const cmd = texto.toLowerCase();
+  if (cmd === '/eventos' || cmd === '/festividad' || cmd === '/festividades' || cmd === '/menu' || cmd === '/fiesta' || cmd === '/fiestas') {
+    if (typeof abrirModalEvento === 'function') abrirModalEvento();
+    escribir.value = '';
+    escribir.blur();
+    return;
+  }
+  fetch(rutaConNombre('/chat'), { method: 'POST', body: JSON.stringify({ id: miId, texto }) }).catch(() => {});
   escribir.value = '';
   escribir.blur(); // de vuelta a caminar con el teclado
 });
@@ -1574,6 +1591,943 @@ if (botonGestos) {
   });
 }
 
+// ---------- eventos y festividades estacionales ----------
+const grupoEstacional = new THREE.Group();
+scene.add(grupoEstacional);
+
+const animadoresEstacionales = [];
+const decoracionesArboles = [];
+let eventoActualConfig = null;
+let modoEventoSeleccionado = null; // null = automático según fecha
+
+const OPCIONES_EVENTOS = [
+  { id: 'auto', titulo: 'Automático', subtitulo: 'Sigue el calendario real', icono: '🗓️', tag: 'Recomendado', especial: false, desc: 'Detecta automáticamente la festividad según el día actual del año.' },
+  { id: 'halloween_mes', titulo: 'Halloween (Mes)', subtitulo: 'Octubre temático', icono: '🎃', tag: 'Mes', especial: false, desc: 'Calabazas talladas con luz tenue, murciélagos y tono otoñal en toda la oficina.' },
+  { id: 'halloween_especial', titulo: 'Halloween (¡Mero Día!)', subtitulo: '31 de Octubre', icono: '👻', tag: 'Mero Día', especial: true, desc: 'Escenario especial: Gran Caldero con poción verde burbujeante, fantasma y cementerio.' },
+  { id: 'diademuertos_mes', titulo: 'Día de Muertos (Temporada)', subtitulo: 'Inicios de Noviembre', icono: '🌼', tag: 'Temporada', especial: false, desc: 'Senderos con flores de cempasúchil doradas, papel picado festivo y veladoras.' },
+  { id: 'diademuertos_especial', titulo: 'Día de Muertos (¡Mero Día!)', subtitulo: '1 y 2 de Noviembre', icono: '💀', tag: 'Mero Día', especial: true, desc: 'Escenario especial: Gran Altar Monumental de 3 niveles con ofrendas, pan de muerto y veladoras.' },
+  { id: 'navidad_mes', titulo: 'Navidad (Mes)', subtitulo: 'Diciembre nevado', icono: '❄️', tag: 'Mes', especial: false, desc: 'Isla y árboles cubiertos de nieve blanca, coronas de pino y guirnaldas de luces.' },
+  { id: 'navidad_especial', titulo: 'Navidad (¡Mero Día!)', subtitulo: '24 y 25 de Diciembre', icono: '🎄', tag: 'Mero Día', especial: true, desc: 'Escenario especial: Gran Árbol Navideño con estrella dorada, regalos, muñeco de nieve y nieve cayendo.' },
+  { id: 'normal', titulo: 'Temporada Regular', subtitulo: 'Sin festividad', icono: '🍃', tag: 'Normal', especial: false, desc: 'Oficina cotidiana con césped verde y clima templado.' },
+];
+
+function obtenerConfigEvento(eleccionManual = modoEventoSeleccionado) {
+  const params = new URLSearchParams(location.search);
+  const paramEvento = params.get('evento');
+  const paramEspecial = params.has('especial') || params.has('merodia') || params.get('especial') === '1' || params.get('merodia') === '1';
+  const paramFecha = params.get('fecha');
+
+  let eleccion = eleccionManual;
+  if (!eleccion && paramEvento) {
+    if (paramEvento === 'halloween') eleccion = paramEspecial ? 'halloween_especial' : 'halloween_mes';
+    else if (paramEvento === 'diademuertos') eleccion = paramEspecial ? 'diademuertos_especial' : 'diademuertos_mes';
+    else if (paramEvento === 'navidad') eleccion = paramEspecial ? 'navidad_especial' : 'navidad_mes';
+    else if (paramEvento === 'ninguno' || paramEvento === 'normal') eleccion = 'normal';
+  }
+
+  let ahora = new Date();
+  if (paramFecha) {
+    const partes = paramFecha.split('-').map(Number);
+    if (partes.length === 2) ahora = new Date(ahora.getFullYear(), partes[0] - 1, partes[1]);
+    else if (partes.length === 3) ahora = new Date(partes[0], partes[1] - 1, partes[2]);
+  }
+
+  const mes = ahora.getMonth() + 1; // 1 - 12
+  const dia = ahora.getDate();      // 1 - 31
+
+  if (!eleccion || eleccion === 'auto') {
+    // 1. Halloween: Mes de Octubre (1 al 31)
+    if (mes === 10) {
+      const esMeroDia = dia === 31 || paramEspecial;
+      return {
+        id: 'halloween',
+        modo: 'auto',
+        nombre: 'Halloween',
+        icono: esMeroDia ? '👻' : '🎃',
+        esMeroDia,
+        titulo: esMeroDia ? '¡El Mero Día de Brujas!' : 'Mes de Halloween',
+        descripcion: esMeroDia ? '31 de Octubre: Gran Caldero con pócima mágica, fantasmas y cementerio' : 'Calabazas talladas, luz de velas y ambiente de misterio',
+      };
+    }
+    // 2. Día de Muertos: 1 al 3 de Noviembre
+    if (mes === 11 && dia <= 3) {
+      const esMeroDia = dia === 1 || dia === 2 || paramEspecial;
+      return {
+        id: 'diademuertos',
+        modo: 'auto',
+        nombre: 'Día de Muertos',
+        icono: esMeroDia ? '💀' : '🌼',
+        esMeroDia,
+        titulo: esMeroDia ? '¡El Mero Día de Muertos!' : 'Temporada de Día de Muertos',
+        descripcion: esMeroDia ? '1 y 2 de Noviembre: Gran Altar Monumental de 3 niveles con ofrendas tradicionales' : 'Caminos de flores de cempasúchil, papel picado y veladoras',
+      };
+    }
+    // 3. Navidad: Diciembre completo y hasta el 6 de Enero
+    if (mes === 12 || (mes === 1 && dia <= 6)) {
+      const esMeroDia = (mes === 12 && (dia === 24 || dia === 25)) || paramEspecial;
+      return {
+        id: 'navidad',
+        modo: 'auto',
+        nombre: 'Navidad',
+        icono: esMeroDia ? '🎄' : '❄️',
+        esMeroDia,
+        titulo: esMeroDia ? '¡Nochebuena y Navidad!' : 'Mes Navideño',
+        descripcion: esMeroDia ? '24 y 25 de Diciembre: Gran Árbol Navideño, regalos, muñeco de nieve y nieve cayendo' : 'Isla nevada, árboles con escarcha y guirnaldas de luces',
+      };
+    }
+    return {
+      id: 'normal',
+      modo: 'auto',
+      nombre: 'Normal',
+      icono: '🍃',
+      esMeroDia: false,
+      titulo: 'Temporada Regular',
+      descripcion: 'Oficina cotidiana con césped verde y clima templado',
+    };
+  }
+
+  // Modos manuales forzados desde el menú:
+  if (eleccion === 'halloween_mes') {
+    return { id: 'halloween', modo: 'manual', nombre: 'Halloween', icono: '🎃', esMeroDia: false, titulo: 'Halloween (Mes)', descripcion: 'Mes de Octubre con calabazas iluminadas y murciélagos' };
+  }
+  if (eleccion === 'halloween_especial') {
+    return { id: 'halloween', modo: 'manual', nombre: 'Halloween', icono: '👻', esMeroDia: true, titulo: 'Halloween (¡Mero Día!)', descripcion: '31 de Octubre: Gran Caldero con pócima mágica, fantasma y cementerio' };
+  }
+  if (eleccion === 'diademuertos_mes') {
+    return { id: 'diademuertos', modo: 'manual', nombre: 'Día de Muertos', icono: '🌼', esMeroDia: false, titulo: 'Día de Muertos (Temporada)', descripcion: 'Caminos de cempasúchil, papel picado y veladoras' };
+  }
+  if (eleccion === 'diademuertos_especial') {
+    return { id: 'diademuertos', modo: 'manual', nombre: 'Día de Muertos', icono: '💀', esMeroDia: true, titulo: 'Día de Muertos (¡Mero Día!)', descripcion: '1 y 2 de Noviembre: Gran Altar Monumental de 3 niveles con ofrendas' };
+  }
+  if (eleccion === 'navidad_mes') {
+    return { id: 'navidad', modo: 'manual', nombre: 'Navidad', icono: '❄️', esMeroDia: false, titulo: 'Navidad (Mes)', descripcion: 'Mes de Diciembre: Isla nevada, escarcha y luces navideñas' };
+  }
+  if (eleccion === 'navidad_especial') {
+    return { id: 'navidad', modo: 'manual', nombre: 'Navidad', icono: '🎄', esMeroDia: true, titulo: 'Navidad (¡Mero Día!)', descripcion: '24 y 25 de Diciembre: Gran Árbol Navideño con estrella dorada, regalos y nieve cayendo' };
+  }
+  return { id: 'normal', modo: 'manual', nombre: 'Normal', icono: '🍃', esMeroDia: false, titulo: 'Temporada Regular', descripcion: 'Oficina cotidiana sin festividad' };
+}
+
+// Modelos 3D Procedurales para las Festividades
+function crearCalabaza(radio = 0.32, { conLuz = true, sombrero = false, cara = true } = {}) {
+  const g = new THREE.Group();
+  // Cuerpo achatado de calabaza con gajos
+  const matCalabaza = new THREE.MeshLambertMaterial({ color: '#ea5d15', flatShading: true });
+  const cuerpo = new THREE.Mesh(new THREE.SphereGeometry(radio, 8, 7), matCalabaza);
+  cuerpo.scale.set(1.2, 0.88, 1.2);
+  cuerpo.position.y = radio * 0.85;
+  cuerpo.castShadow = true;
+  g.add(cuerpo);
+
+  // Tallo curvado
+  const tallo = new THREE.Mesh(new THREE.CylinderGeometry(radio * 0.1, radio * 0.16, radio * 0.45, 5), mat('#2e5b2c'));
+  tallo.position.set(0, radio * 1.68, 0);
+  tallo.rotation.z = 0.22;
+  g.add(tallo);
+
+  if (cara) {
+    const matCara = new THREE.MeshBasicMaterial({ color: '#ffe455' });
+    // Ojos triangulares
+    const ojoI = new THREE.Mesh(new THREE.BoxGeometry(radio * 0.22, radio * 0.18, radio * 0.08), matCara);
+    ojoI.position.set(-radio * 0.38, radio * 0.96, radio * 1.12);
+    ojoI.rotation.z = -0.2;
+    const ojoD = new THREE.Mesh(new THREE.BoxGeometry(radio * 0.22, radio * 0.18, radio * 0.08), matCara);
+    ojoD.position.set(radio * 0.38, radio * 0.96, radio * 1.12);
+    ojoD.rotation.z = 0.2;
+    // Boca con dientes
+    const boca = new THREE.Mesh(new THREE.BoxGeometry(radio * 0.64, radio * 0.16, radio * 0.08), matCara);
+    boca.position.set(0, radio * 0.68, radio * 1.15);
+    g.add(ojoI, ojoD, boca);
+  }
+
+  let luz = null;
+  if (conLuz) {
+    luz = new THREE.PointLight('#ff7722', 1.0, radio * 9, 2);
+    luz.position.set(0, radio * 0.9, radio * 0.5);
+    g.add(luz);
+    const fase = Math.random() * Math.PI * 2;
+    animadoresEstacionales.push((t) => {
+      luz.intensity = 0.9 + Math.sin(t * 12 + fase) * 0.25;
+    });
+  }
+
+  if (sombrero) {
+    const ala = new THREE.Mesh(new THREE.CylinderGeometry(radio * 1.6, radio * 1.6, 0.04, 12), mat('#1c1e24'));
+    ala.position.y = radio * 1.62;
+    const cono = new THREE.Mesh(new THREE.ConeGeometry(radio * 0.85, radio * 1.8, 8), mat('#252830'));
+    cono.position.set(0, radio * 2.5, -radio * 0.1);
+    cono.rotation.x = -0.15;
+    const cinta = new THREE.Mesh(new THREE.CylinderGeometry(radio * 0.86, radio * 0.88, radio * 0.22, 8), mat('#8e24aa'));
+    cinta.position.set(0, radio * 1.74, -0.01);
+    g.add(ala, cono, cinta);
+  }
+
+  return g;
+}
+
+function crearMurcielago(escala = 1) {
+  const g = new THREE.Group();
+  const matNegro = mat('#23252e');
+  // Cuerpo
+  const cuerpo = new THREE.Mesh(new THREE.SphereGeometry(0.12 * escala, 6, 5), matNegro);
+  cuerpo.position.y = 0.15 * escala;
+  // Orejitas
+  const orejaI = new THREE.Mesh(new THREE.ConeGeometry(0.04 * escala, 0.09 * escala, 4), matNegro);
+  orejaI.position.set(-0.06 * escala, 0.26 * escala, 0);
+  const orejaD = new THREE.Mesh(new THREE.ConeGeometry(0.04 * escala, 0.09 * escala, 4), matNegro);
+  orejaD.position.set(0.06 * escala, 0.26 * escala, 0);
+  // Ojitos amarillos
+  const matOjos = new THREE.MeshBasicMaterial({ color: '#ffea00' });
+  const ojoI = new THREE.Mesh(new THREE.SphereGeometry(0.02 * escala, 4, 4), matOjos);
+  ojoI.position.set(-0.04 * escala, 0.17 * escala, 0.11 * escala);
+  const ojoD = new THREE.Mesh(new THREE.SphereGeometry(0.02 * escala, 4, 4), matOjos);
+  ojoD.position.set(0.04 * escala, 0.17 * escala, 0.11 * escala);
+  // Alas
+  const alaI = new THREE.Mesh(new THREE.BoxGeometry(0.3 * escala, 0.12 * escala, 0.02 * escala), matNegro);
+  alaI.position.set(-0.2 * escala, 0.15 * escala, 0);
+  alaI.rotation.z = 0.2;
+  const alaD = new THREE.Mesh(new THREE.BoxGeometry(0.3 * escala, 0.12 * escala, 0.02 * escala), matNegro);
+  alaD.position.set(0.2 * escala, 0.15 * escala, 0);
+  alaD.rotation.z = -0.2;
+  g.add(cuerpo, orejaI, orejaD, ojoI, ojoD, alaI, alaD);
+  return g;
+}
+
+function crearCempasuchil(radio = 0.18, color = '#ff7700') {
+  const g = new THREE.Group();
+  const flor = new THREE.Mesh(new THREE.DodecahedronGeometry(radio, 0), mat(color));
+  flor.position.y = radio * 0.9;
+  const tallito = new THREE.Mesh(new THREE.CylinderGeometry(radio * 0.12, radio * 0.12, radio * 0.6, 4), mat('#386b36'));
+  tallito.position.y = radio * 0.3;
+  g.add(tallito, flor);
+  return g;
+}
+
+function crearTiraPapelPicado(ancho = 2.6, y = 2.3) {
+  const g = new THREE.Group();
+  const colores = ['#e91e63', '#ff9800', '#9c27b0', '#00bcd4', '#ffeb3b', '#4caf50'];
+  const n = 6;
+  const w = ancho / n;
+  for (let i = 0; i < n; i++) {
+    const c = colores[i % colores.length];
+    const bandera = new THREE.Mesh(new THREE.PlaneGeometry(w * 0.78, 0.42), new THREE.MeshLambertMaterial({ color: c, side: THREE.DoubleSide }));
+    bandera.position.set(-ancho / 2 + w * (i + 0.5), y - 0.22, 0);
+    bandera.rotation.x = 0.08 * ((i % 2) ? 1 : -1);
+    g.add(bandera);
+  }
+  return g;
+}
+
+function crearVeladora(x, y, z, { conLuz = true } = {}) {
+  const g = new THREE.Group();
+  g.position.set(x, y, z);
+  const vaso = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.08, 0.18, 7), mat('#f8f5eb'));
+  vaso.position.y = 0.09;
+  const llama = new THREE.Mesh(new THREE.ConeGeometry(0.032, 0.08, 5), new THREE.MeshBasicMaterial({ color: '#ffd54f' }));
+  llama.position.y = 0.22;
+  g.add(vaso, llama);
+
+  if (conLuz) {
+    const luz = new THREE.PointLight('#ffb347', 0.8, 3.2, 2);
+    luz.position.y = 0.26;
+    g.add(luz);
+    const fase = Math.random() * Math.PI * 2;
+    animadoresEstacionales.push((t) => {
+      luz.intensity = 0.75 + Math.sin(t * 15 + fase) * 0.2;
+      llama.scale.y = 0.9 + Math.sin(t * 18 + fase) * 0.2;
+    });
+  }
+  return g;
+}
+
+function crearCoronaNavidena(radio = 0.35) {
+  const g = new THREE.Group();
+  const pino = new THREE.Mesh(new THREE.TorusGeometry(radio, radio * 0.3, 6, 12), mat('#1b5e20'));
+  pino.rotation.x = Math.PI / 2;
+  // Moño rojo arriba
+  const matMono = mat('#d32f2f');
+  const nudo = new THREE.Mesh(new THREE.SphereGeometry(radio * 0.18, 6, 5), matMono);
+  nudo.position.set(0, radio, radio * 0.25);
+  const lazoI = new THREE.Mesh(new THREE.BoxGeometry(radio * 0.12, radio * 0.45, 0.03), matMono);
+  lazoI.position.set(-radio * 0.15, radio * 0.75, radio * 0.25);
+  lazoI.rotation.z = 0.35;
+  const lazoD = new THREE.Mesh(new THREE.BoxGeometry(radio * 0.12, radio * 0.45, 0.03), matMono);
+  lazoD.position.set(radio * 0.15, radio * 0.75, radio * 0.25);
+  lazoD.rotation.z = -0.35;
+  // Bayas rojas
+  const baya1 = new THREE.Mesh(new THREE.SphereGeometry(radio * 0.08, 4, 4), matMono);
+  baya1.position.set(-radio * 0.7, 0, radio * 0.25);
+  const baya2 = new THREE.Mesh(new THREE.SphereGeometry(radio * 0.08, 4, 4), matMono);
+  baya2.position.set(radio * 0.7, 0, radio * 0.25);
+  g.add(pino, nudo, lazoI, lazoD, baya1, baya2);
+  return g;
+}
+
+function crearGuirnaldaLuces(longitud = 4, y = 2.5) {
+  const g = new THREE.Group();
+  const colores = ['#ff3344', '#33dd55', '#ffcc22', '#3399ff', '#ff8800'];
+  const focos = [];
+  const cantidad = 8;
+  const paso = longitud / (cantidad - 1);
+  for (let i = 0; i < cantidad; i++) {
+    const c = colores[i % colores.length];
+    const matFoco = new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: 1.2, flatShading: true });
+    const foco = new THREE.Mesh(new THREE.IcosahedronGeometry(0.07, 0), matFoco);
+    const x = -longitud / 2 + i * paso;
+    const dip = Math.sin((i / (cantidad - 1)) * Math.PI) * 0.18; // curva colgante
+    foco.position.set(x, y - dip, 0);
+    g.add(foco);
+    focos.push({ mat: matFoco, idx: i });
+  }
+  animadoresEstacionales.push((t) => {
+    const par = Math.floor(t * 2.5) % 2;
+    for (const f of focos) {
+      f.mat.emissiveIntensity = (f.idx % 2 === par) ? 1.6 : 0.3;
+    }
+  });
+  return g;
+}
+
+function crearMunecoNieve() {
+  const g = new THREE.Group();
+  const matNieve = mat('#ffffff');
+  const matNegro = mat('#212529');
+  const matNaranja = mat('#ff6f00');
+  const matRojo = mat('#d32f2f');
+
+  // Bolas de nieve
+  const bolaAbajo = new THREE.Mesh(new THREE.SphereGeometry(0.55, 8, 7), matNieve);
+  bolaAbajo.position.y = 0.52;
+  const bolaMedio = new THREE.Mesh(new THREE.SphereGeometry(0.38, 8, 7), matNieve);
+  bolaMedio.position.y = 1.22;
+  const bolaCabeza = new THREE.Mesh(new THREE.SphereGeometry(0.26, 8, 7), matNieve);
+  bolaCabeza.position.y = 1.72;
+
+  // Botones de carbón
+  for (let i = 0; i < 3; i++) {
+    const boton = new THREE.Mesh(new THREE.SphereGeometry(0.035, 4, 4), matNegro);
+    boton.position.set(0, 1.1 + i * 0.15, 0.36 - i * 0.04);
+    g.add(boton);
+  }
+
+  // Ojos de carbón
+  const ojoI = new THREE.Mesh(new THREE.SphereGeometry(0.03, 4, 4), matNegro);
+  ojoI.position.set(-0.09, 1.78, 0.24);
+  const ojoD = new THREE.Mesh(new THREE.SphereGeometry(0.03, 4, 4), matNegro);
+  ojoD.position.set(0.09, 1.78, 0.24);
+
+  // Nariz de zanahoria
+  const nariz = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.24, 5), matNaranja);
+  nariz.position.set(0, 1.7, 0.36);
+  nariz.rotation.x = Math.PI / 2;
+
+  // Sombrero de copa
+  const alaSombrero = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.03, 10), matNegro);
+  alaSombrero.position.y = 1.95;
+  const copaSombrero = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.32, 10), matNegro);
+  copaSombrero.position.y = 2.12;
+  const cintaRoja = new THREE.Mesh(new THREE.CylinderGeometry(0.23, 0.23, 0.06, 10), matRojo);
+  cintaRoja.position.y = 1.99;
+
+  // Bufanda
+  const bufanda = new THREE.Mesh(new THREE.TorusGeometry(0.24, 0.07, 6, 12), matRojo);
+  bufanda.position.y = 1.5;
+  bufanda.rotation.x = Math.PI / 2;
+
+  // Brazos de ramitas
+  const brazoI = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.025, 0.65, 4), mat('#5c3d2e'));
+  brazoI.position.set(-0.52, 1.35, 0);
+  brazoI.rotation.z = Math.PI / 3;
+  const brazoD = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.025, 0.65, 4), mat('#5c3d2e'));
+  brazoD.position.set(0.52, 1.35, 0);
+  brazoD.rotation.z = -Math.PI / 3;
+
+  g.add(bolaAbajo, bolaMedio, bolaCabeza, ojoI, ojoD, nariz, alaSombrero, copaSombrero, cintaRoja, bufanda, brazoI, brazoD);
+  return g;
+}
+
+function crearCajasRegalos() {
+  const g = new THREE.Group();
+  const presets = [
+    { w: 0.65, h: 0.52, d: 0.65, colorCaja: '#d32f2f', colorLazo: '#ffd54f', x: -1.2, z: 0.9 },
+    { w: 0.54, h: 0.68, d: 0.54, colorCaja: '#1976d2', colorLazo: '#ffffff', x: 1.1, z: 0.8 },
+    { w: 0.72, h: 0.44, d: 0.72, colorCaja: '#388e3c', colorLazo: '#d32f2f', x: -0.85, z: -1.1 },
+    { w: 0.48, h: 0.48, d: 0.48, colorCaja: '#fbc02d', colorLazo: '#7b1fa2', x: 0.95, z: -0.85 },
+    { w: 0.58, h: 0.38, d: 0.58, colorCaja: '#e91e63', colorLazo: '#ffffff', x: 1.45, z: 0.1 },
+  ];
+  for (const p of presets) {
+    const cajaG = new THREE.Group();
+    cajaG.position.set(p.x, p.h / 2, p.z);
+    cajaG.add(caja(p.w, p.h, p.d, p.colorCaja, 0, 0, 0));
+    // Cinta cruzada
+    cajaG.add(caja(p.w * 0.16, p.h + 0.01, p.d + 0.01, p.colorLazo, 0, 0, 0));
+    cajaG.add(caja(p.w + 0.01, p.h + 0.01, p.d * 0.16, p.colorLazo, 0, 0, 0));
+    // Moño arriba
+    const mono = new THREE.Mesh(new THREE.SphereGeometry(p.w * 0.14, 5, 5), mat(p.colorLazo));
+    mono.position.y = p.h / 2 + p.w * 0.1;
+    cajaG.add(mono);
+    g.add(cajaG);
+  }
+  return g;
+}
+
+// Escenarios Especiales del Mero Día en la Plaza Central
+function crearEscenarioHalloweenMeroDia() {
+  const g = new THREE.Group();
+  g.position.set(0, 0, 0);
+
+  // 1. Gran Caldero de Bruja
+  const matHierro = mat('#1b1e22');
+  const caldero = new THREE.Mesh(new THREE.CylinderGeometry(1.28, 0.88, 1.22, 14), matHierro);
+  caldero.position.y = 0.85;
+  const bordeCaldero = new THREE.Mesh(new THREE.TorusGeometry(1.28, 0.14, 6, 16), matHierro);
+  bordeCaldero.position.y = 1.46;
+  bordeCaldero.rotation.x = Math.PI / 2;
+  // 3 Patas arqueadas
+  for (let i = 0; i < 3; i++) {
+    const ang = (i / 3) * Math.PI * 2;
+    const pata = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 0.6, 6), matHierro);
+    pata.position.set(Math.sin(ang) * 0.95, 0.3, Math.cos(ang) * 0.95);
+    pata.rotation.z = (Math.cos(ang) * 0.25);
+    pata.rotation.x = (Math.sin(ang) * -0.25);
+    g.add(pata);
+  }
+
+  // Leños de madera y brasas
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI;
+    const leno = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.11, 1.4, 5), mat('#422d1f'));
+    leno.position.set(0, 0.08, 0);
+    leno.rotation.y = a;
+    leno.rotation.z = Math.PI / 2;
+    g.add(leno);
+  }
+  const brasas = new THREE.Mesh(new THREE.CylinderGeometry(0.65, 0.75, 0.12, 8), new THREE.MeshStandardMaterial({ color: '#ff3d00', emissive: '#ff5722', emissiveIntensity: 1.5 }));
+  brasas.position.y = 0.06;
+  g.add(brasas);
+
+  // Poción verde brillante burbujeante
+  const matPocion = new THREE.MeshStandardMaterial({ color: '#39ff14', emissive: '#2ebd0e', emissiveIntensity: 1.4, flatShading: true });
+  const superficiePocion = new THREE.Mesh(new THREE.CylinderGeometry(1.22, 1.22, 0.08, 14), matPocion);
+  superficiePocion.position.y = 1.35;
+  g.add(caldero, bordeCaldero, superficiePocion);
+
+  // Luz espectral verde de la poción
+  const luzPocion = new THREE.PointLight('#39ff14', 2.8, 9, 1.8);
+  luzPocion.position.set(0, 1.6, 0);
+  g.add(luzPocion);
+
+  // Burbujas flotantes de poción
+  const burbujas = [];
+  for (let i = 0; i < 7; i++) {
+    const rBurbuja = 0.08 + Math.random() * 0.12;
+    const ang = Math.random() * Math.PI * 2;
+    const dist = Math.random() * 0.85;
+    const bMesh = new THREE.Mesh(new THREE.SphereGeometry(rBurbuja, 6, 6), matPocion);
+    const baseX = Math.sin(ang) * dist;
+    const baseZ = Math.cos(ang) * dist;
+    bMesh.position.set(baseX, 1.38, baseZ);
+    g.add(bMesh);
+    burbujas.push({ mesh: bMesh, baseY: 1.38, amp: 0.14 + Math.random() * 0.18, vel: 2.5 + Math.random() * 3, fase: Math.random() * Math.PI * 2 });
+  }
+
+  // 2. Mini-Cementerio y Lápidas
+  const matPiedra = mat('#545b62');
+  const lapida1 = new THREE.Mesh(new THREE.BoxGeometry(0.72, 1.05, 0.18), matPiedra);
+  lapida1.position.set(-2.0, 0.52, 0.7);
+  lapida1.rotation.y = 0.35;
+  const cruz1 = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.08, 0.2), mat('#2b3035'));
+  cruz1.position.set(-2.0, 0.75, 0.7);
+  cruz1.rotation.y = 0.35;
+  const lapida2 = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.9, 0.16), matPiedra);
+  lapida2.position.set(1.9, 0.45, -1.1);
+  lapida2.rotation.y = -0.4;
+  g.add(lapida1, cruz1, lapida2);
+
+  // 3. Calabaza Monarca Gigante con Sombrero de Bruja
+  const reina = crearCalabaza(0.55, { conLuz: true, sombrero: true, cara: true });
+  reina.position.set(-1.6, 0, -1.3);
+  reina.rotation.y = 0.6;
+  g.add(reina);
+
+  // 4. Fantasma Flotante Simpático
+  const gFantasma = new THREE.Group();
+  gFantasma.position.set(1.4, 2.2, 1.2);
+  const matFantasma = new THREE.MeshLambertMaterial({ color: '#f0f6ff', transparent: true, opacity: 0.86, flatShading: true });
+  const cabezaFantasma = new THREE.Mesh(new THREE.SphereGeometry(0.42, 8, 7), matFantasma);
+  cabezaFantasma.position.y = 0.3;
+  const faldaFantasma = new THREE.Mesh(new THREE.ConeGeometry(0.44, 0.7, 7), matFantasma);
+  faldaFantasma.rotation.x = Math.PI;
+  // Ojos del fantasma
+  const ojoFI = new THREE.Mesh(new THREE.SphereGeometry(0.045, 4, 4), mat('#1a1a24'));
+  ojoFI.position.set(-0.12, 0.32, 0.38);
+  const ojoFD = new THREE.Mesh(new THREE.SphereGeometry(0.045, 4, 4), mat('#1a1a24'));
+  ojoFD.position.set(0.12, 0.32, 0.38);
+  gFantasma.add(cabezaFantasma, faldaFantasma, ojoFI, ojoFD);
+  g.add(gFantasma);
+
+  // Banner flotante 3D
+  const cartel = etiqueta('cartel-festivo halloween', '🎃 ¡Noche de Brujas! 👻');
+  cartel.position.set(0, 3.4, 0);
+  g.add(cartel);
+
+  // Animaciones del escenario
+  animadoresEstacionales.push((t) => {
+    // Oscilación de burbujas
+    for (const b of burbujas) {
+      b.mesh.position.y = b.baseY + Math.sin(t * b.vel + b.fase) * b.amp;
+      b.mesh.scale.setScalar(0.85 + Math.sin(t * b.vel + b.fase) * 0.25);
+    }
+    // Levitación del fantasma
+    gFantasma.position.y = 2.2 + Math.sin(t * 2.2) * 0.3;
+    gFantasma.rotation.y = Math.sin(t * 1.4) * 0.4;
+    // Parpadeo de luz mágica verde
+    luzPocion.intensity = 2.4 + Math.sin(t * 9) * 0.5;
+  });
+
+  return g;
+}
+
+function crearEscenarioDiaDeMuertosMeroDia() {
+  const g = new THREE.Group();
+  g.position.set(0, 0, 0);
+
+  // 1. Altar de 3 Niveles (Inframundo, Tierra, Cielo)
+  const nivel1 = caja(3.4, 0.38, 2.3, '#f5efe6', 0, 0.19, -0.1);
+  const nivel2 = caja(2.3, 0.38, 1.5, '#ffffff', 0, 0.57, -0.3);
+  const nivel3 = caja(1.3, 0.38, 0.9, '#f5efe6', 0, 0.95, -0.5);
+  g.add(nivel1, nivel2, nivel3);
+
+  // Cenefas de papel picado en el frente de cada nivel
+  g.add(crearTiraPapelPicado(3.2, 0.38));
+  g.add(crearTiraPapelPicado(2.1, 0.76));
+  g.add(crearTiraPapelPicado(1.2, 1.14));
+
+  // 2. Gran Arco de Cempasúchil sobre el altar
+  const arco = new THREE.Group();
+  arco.position.set(0, 1.14, -0.75);
+  for (let i = 0; i <= 14; i++) {
+    const ang = (i / 14) * Math.PI;
+    const flor = crearCempasuchil(0.16, i % 2 ? '#ff7700' : '#ffaa00');
+    flor.position.set(Math.cos(ang) * 0.95, Math.sin(ang) * 0.85, 0);
+    arco.add(flor);
+  }
+  g.add(arco);
+
+  // 3. Calaveritas de Azúcar Tradicionales
+  const crearCalaverita = (x, y, z, cColor) => {
+    const cg = new THREE.Group();
+    cg.position.set(x, y, z);
+    const cráneo = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.22, 0.2), mat('#ffffff'));
+    cráneo.position.y = 0.11;
+    const ojoI = new THREE.Mesh(new THREE.SphereGeometry(0.045, 4, 4), mat(cColor));
+    ojoI.position.set(-0.06, 0.13, 0.11);
+    const ojoD = new THREE.Mesh(new THREE.SphereGeometry(0.045, 4, 4), mat(cColor));
+    ojoD.position.set(0.06, 0.13, 0.11);
+    const frente = new THREE.Mesh(new THREE.SphereGeometry(0.035, 4, 4), mat('#ff007f'));
+    frente.position.set(0, 0.18, 0.11);
+    cg.add(cráneo, ojoI, ojoD, frente);
+    return cg;
+  };
+  g.add(crearCalaverita(-0.4, 1.14, -0.5, '#00bcd4'));
+  g.add(crearCalaverita(0.4, 1.14, -0.5, '#e91e63'));
+  g.add(crearCalaverita(0, 1.14, -0.3, '#ffeb3b'));
+
+  // 4. Pan de Muerto
+  const crearPanDeMuerto = (x, y, z) => {
+    const pg = new THREE.Group();
+    pg.position.set(x, y, z);
+    const bollo = new THREE.Mesh(new THREE.SphereGeometry(0.16, 7, 6), mat('#c68c4a'));
+    bollo.scale.set(1.2, 0.7, 1.2);
+    bollo.position.y = 0.1;
+    const hueso1 = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.05, 0.06), mat('#e0a768'));
+    hueso1.position.y = 0.18;
+    const hueso2 = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.05, 0.32), mat('#e0a768'));
+    hueso2.position.y = 0.18;
+    const bolita = new THREE.Mesh(new THREE.SphereGeometry(0.04, 4, 4), mat('#f5efe6'));
+    bolita.position.y = 0.22;
+    pg.add(bollo, hueso1, hueso2, bolita);
+    return pg;
+  };
+  g.add(crearPanDeMuerto(-0.65, 0.76, -0.2));
+  g.add(crearPanDeMuerto(0.65, 0.76, -0.2));
+
+  // 5. Veladoras en los escalones
+  const velas = [
+    [-1.4, 0.38, 0.8], [1.4, 0.38, 0.8], [-1.4, 0.38, -0.5], [1.4, 0.38, -0.5],
+    [-0.9, 0.76, 0.3], [0.9, 0.76, 0.3],
+    [-0.45, 1.14, -0.75], [0.45, 1.14, -0.75],
+  ];
+  for (const [vx, vy, vz] of velas) g.add(crearVeladora(vx, vy, vz, { conLuz: true }));
+
+  // Luz dorada ceremonial del altar
+  const luzAltar = new THREE.PointLight('#ff9900', 2.0, 8, 2);
+  luzAltar.position.set(0, 1.4, -0.2);
+  g.add(luzAltar);
+
+  // 6. Camino de pétalos de cempasúchil
+  for (let i = 0; i < 24; i++) {
+    const petalo = new THREE.Mesh(new THREE.CircleGeometry(0.09 + Math.random() * 0.06, 5), mat(Math.random() > 0.5 ? '#ff7700' : '#ffaa00'));
+    petalo.rotation.x = -Math.PI / 2;
+    petalo.position.set((Math.random() - 0.5) * 1.6, 0.19, 0.9 + Math.random() * 2.2);
+    g.add(petalo);
+  }
+
+  // Banner flotante 3D
+  const cartel = etiqueta('cartel-festivo diademuertos', '💀 Gran Ofrenda de Muertos 🌼');
+  cartel.position.set(0, 3.2, -0.4);
+  g.add(cartel);
+
+  animadoresEstacionales.push((t) => {
+    luzAltar.intensity = 1.8 + Math.sin(t * 11) * 0.35;
+  });
+
+  return g;
+}
+
+function crearEscenarioNavidadMeroDia() {
+  const g = new THREE.Group();
+  g.position.set(0, 0, 0);
+
+  // 1. Gran Árbol de Navidad Monumental
+  const matPino = mat('#1b5e20');
+  const matPinoClaro = mat('#25732b');
+  const tronco = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.45, 1.3, 7), mat('#5c3a21'));
+  tronco.position.y = 0.65;
+  g.add(tronco);
+
+  // 4 Niveles de ramas con conos
+  const pisosArbol = [
+    { r: 2.3, h: 2.1, y: 2.0, mat: matPino },
+    { r: 1.8, h: 1.8, y: 3.1, mat: matPinoClaro },
+    { r: 1.35, h: 1.5, y: 4.1, mat: matPino },
+    { r: 0.85, h: 1.3, y: 5.0, mat: matPinoClaro },
+  ];
+  for (const pa of pisosArbol) {
+    const cono = new THREE.Mesh(new THREE.ConeGeometry(pa.r, pa.h, 8), pa.mat);
+    cono.position.y = pa.y;
+    // Borde de nieve en la base de cada piso
+    const nieveFalda = new THREE.Mesh(new THREE.ConeGeometry(pa.r * 1.02, 0.22, 8), mat('#ffffff'));
+    nieveFalda.position.y = pa.y - pa.h / 2 + 0.11;
+    g.add(cono, nieveFalda);
+  }
+
+  // Esferas navideñas brillantes
+  const coloresEsferas = ['#ff1744', '#ffd700', '#2979ff', '#e040fb', '#00e676', '#ffffff'];
+  for (let i = 0; i < 22; i++) {
+    const ang = (i / 22) * Math.PI * 2 * 3; // espiral
+    const altura = 1.3 + (i / 22) * 3.8;
+    const radioCapa = 2.3 * (1 - (altura - 1.2) / 4.4);
+    const col = coloresEsferas[i % coloresEsferas.length];
+    const matEsfera = new THREE.MeshStandardMaterial({ color: col, emissive: col, emissiveIntensity: 0.45, roughness: 0.2, metalness: 0.8 });
+    const esfera = new THREE.Mesh(new THREE.SphereGeometry(0.12, 6, 6), matEsfera);
+    esfera.position.set(Math.sin(ang) * (radioCapa + 0.05), altura, Math.cos(ang) * (radioCapa + 0.05));
+    g.add(esfera);
+  }
+
+  // Gran Estrella de Belén Dorada en la punta
+  const gEstrella = new THREE.Group();
+  gEstrella.position.set(0, 5.85, 0);
+  const matEstrella = new THREE.MeshStandardMaterial({ color: '#fff59d', emissive: '#ffd700', emissiveIntensity: 1.8, flatShading: true });
+  const conoE1 = new THREE.Mesh(new THREE.ConeGeometry(0.24, 0.75, 4), matEstrella);
+  const conoE2 = new THREE.Mesh(new THREE.ConeGeometry(0.24, 0.75, 4), matEstrella);
+  conoE2.rotation.z = Math.PI;
+  const conoE3 = new THREE.Mesh(new THREE.ConeGeometry(0.24, 0.75, 4), matEstrella);
+  conoE3.rotation.z = Math.PI / 2;
+  const conoE4 = new THREE.Mesh(new THREE.ConeGeometry(0.24, 0.75, 4), matEstrella);
+  conoE4.rotation.z = -Math.PI / 2;
+  gEstrella.add(conoE1, conoE2, conoE3, conoE4);
+  g.add(gEstrella);
+
+  // Luz dorada brillante en la estrella
+  const luzEstrella = new THREE.PointLight('#ffd700', 2.4, 12, 1.8);
+  luzEstrella.position.set(0, 5.9, 0);
+  g.add(luzEstrella);
+
+  // 2. Montaña de Regalos alrededor del árbol
+  g.add(crearCajasRegalos());
+
+  // 3. Muñeco de Nieve (Frosty)
+  const muneco = crearMunecoNieve();
+  muneco.position.set(2.4, 0, 1.1);
+  muneco.rotation.y = -0.5;
+  g.add(muneco);
+
+  // 4. Copos de Nieve Cayendo por Todo el Mapa
+  const copos = [];
+  const geoCopo = new THREE.DodecahedronGeometry(0.08, 0);
+  const matCopo = new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.85 });
+  for (let i = 0; i < 160; i++) {
+    const copo = new THREE.Mesh(geoCopo, matCopo);
+    const x = (Math.random() - 0.5) * 60;
+    const z = (Math.random() - 0.5) * 60;
+    const y = Math.random() * 20;
+    copo.position.set(x, y, z);
+    copo.scale.setScalar(0.6 + Math.random() * 0.8);
+    g.add(copo);
+    copos.push({ mesh: copo, velY: 1.8 + Math.random() * 1.6, velX: 0.6 + Math.random() * 0.8, fase: Math.random() * Math.PI * 2 });
+  }
+
+  // Banner flotante 3D
+  const cartel = etiqueta('cartel-festivo navidad', '🎄 ¡Feliz Navidad! 🎅');
+  cartel.position.set(0, 6.7, 0);
+  g.add(cartel);
+
+  // Animaciones navideñas
+  animadoresEstacionales.push((t, dt) => {
+    // Rotación de la estrella dorada
+    gEstrella.rotation.y = t * 1.2;
+    luzEstrella.intensity = 2.2 + Math.sin(t * 8) * 0.4;
+
+    // Caída continua de copos de nieve
+    for (const c of copos) {
+      c.mesh.position.y -= c.velY * dt;
+      c.mesh.position.x += Math.sin(t * 1.4 + c.fase) * (c.velX * dt);
+      c.mesh.position.z += Math.cos(t * 1.1 + c.fase) * (c.velX * dt);
+      if (c.mesh.position.y < 0.1) {
+        c.mesh.position.y = 18 + Math.random() * 4;
+        c.mesh.position.x = (Math.random() - 0.5) * 60;
+        c.mesh.position.z = (Math.random() - 0.5) * 60;
+      }
+    }
+  });
+
+  return g;
+}
+
+// Limpieza de todos los elementos estacionales antes de cambiar
+function limpiarEventoEstacional() {
+  quitarDeEscena(grupoEstacional);
+  grupoEstacional.clear();
+  scene.add(grupoEstacional);
+  animadoresEstacionales.length = 0;
+
+  // Limpiar decoraciones de salas
+  for (const s of salas.values()) {
+    if (s._decoracionEstacional) {
+      quitarDeEscena(s._decoracionEstacional);
+      s._decoracionEstacional = null;
+    }
+  }
+
+  // Limpiar nieve de los árboles
+  for (const da of decoracionesArboles) quitarDeEscena(da);
+  decoracionesArboles.length = 0;
+
+  // Restaurar colores originales de la isla, farol y plaza
+  if (typeof COLOR_ISLA_ORIG !== 'undefined') isla.material.color.copy(COLOR_ISLA_ORIG);
+  if (typeof COLOR_ORILLA_ORIG !== 'undefined') orilla.material.color.copy(COLOR_ORILLA_ORIG);
+  if (typeof COLOR_PLAZA_ORIG !== 'undefined') plaza.material.color.copy(COLOR_PLAZA_ORIG);
+  if (typeof COLOR_FAROL_ORIG !== 'undefined') bombilla.color.copy(COLOR_FAROL_ORIG);
+  if (typeof COLOR_LUZ_FAROL_ORIG !== 'undefined') luzFarol.color.copy(COLOR_LUZ_FAROL_ORIG);
+}
+
+// Decorar una sala según el evento activo
+function decorarSalaEstacional(sala) {
+  if (!eventoActualConfig || eventoActualConfig.id === 'normal') return;
+  if (sala._decoracionEstacional) {
+    quitarDeEscena(sala._decoracionEstacional);
+    sala._decoracionEstacional = null;
+  }
+  const g = new THREE.Group();
+  sala._decoracionEstacional = g;
+  sala.g.add(g);
+
+  const evId = eventoActualConfig.id;
+
+  if (evId === 'halloween') {
+    // Calabazas iluminadas en la entrada de la sala
+    const cal1 = crearCalabaza(0.24, { conLuz: true, sombrero: false, cara: true });
+    cal1.position.set(MITAD - 0.7, 0.25, MITAD - 0.4);
+    cal1.rotation.y = -0.5;
+    const cal2 = crearCalabaza(0.2, { conLuz: true, sombrero: false, cara: true });
+    cal2.position.set(-MITAD + 0.7, 0.25, MITAD - 0.4);
+    cal2.rotation.y = 0.5;
+    // Murciélago descansando en el librero
+    const mur = crearMurcielago(0.9);
+    mur.position.set(-MITAD + 0.5, 2.25, -1.4);
+    g.add(cal1, cal2, mur);
+  } else if (evId === 'diademuertos') {
+    // Tira de papel picado festivo en la pared frontal superior
+    const papel = crearTiraPapelPicado(SALA * 0.75, 2.7);
+    papel.position.set(0, 0, MITAD - 0.05);
+    // Veladora en la entrada
+    const vela = crearVeladora(MITAD - 0.65, 0.25, MITAD - 0.4, { conLuz: true });
+    const flor = crearCempasuchil(0.16, '#ff7700');
+    flor.position.set(MITAD - 0.45, 0.25, MITAD - 0.4);
+    g.add(papel, vela, flor);
+  } else if (evId === 'navidad') {
+    // Corona navideña de pino en la pared de fondo
+    const corona = crearCoronaNavidena(0.42);
+    corona.position.set(0, 2.0, -MITAD + 0.32);
+    corona.rotation.x = 0;
+    // Tira de luces navideñas a lo largo de la pared de fondo
+    const luces = crearGuirnaldaLuces(SALA * 0.85, 2.68);
+    luces.position.set(0, 0, -MITAD + 0.3);
+    g.add(corona, luces);
+  }
+}
+
+// Aplicar y renderizar el evento estacional en el mundo
+function aplicarEventoEstacional(eleccionManual = modoEventoSeleccionado) {
+  eventoActualConfig = obtenerConfigEvento(eleccionManual);
+  limpiarEventoEstacional();
+
+  const cfg = eventoActualConfig;
+  const evId = cfg.id;
+
+  // Ajustes de colores de entorno según la festividad
+  if (evId === 'halloween') {
+    isla.material.color.set('#9eb97d'); // césped otoñal
+    orilla.material.color.set('#bfa075');
+    bombilla.color.set('#ff8c33');
+    luzFarol.color.set('#ff6f00');
+
+    // Calabazas Jack-o'-lantern repartidas en la plaza
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2 + 0.4;
+      const r = 4.2;
+      const cal = crearCalabaza(0.3, { conLuz: true, sombrero: i === 0, cara: true });
+      cal.position.set(Math.sin(a) * r, 0.18, Math.cos(a) * r);
+      cal.rotation.y = a + Math.PI;
+      grupoEstacional.add(cal);
+    }
+  } else if (evId === 'diademuertos') {
+    isla.material.color.set('#a6c287');
+    bombilla.color.set('#ffaa22');
+    luzFarol.color.set('#ff8f00');
+
+    // Ramilletes de cempasúchil en el borde de la plaza
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2 + 0.15;
+      const r = 4.5;
+      const flor = crearCempasuchil(0.2, i % 2 ? '#ff6d00' : '#ffab00');
+      flor.position.set(Math.sin(a) * r, 0.18, Math.cos(a) * r);
+      grupoEstacional.add(flor);
+    }
+    // Veladoras al inicio de los caminos
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+      grupoEstacional.add(crearVeladora(Math.sin(a) * 3.8, 0.18, Math.cos(a) * 3.8, { conLuz: true }));
+    }
+  } else if (evId === 'navidad') {
+    // Manto de nieve en toda la isla
+    isla.material.color.set('#edf5f9');
+    orilla.material.color.set('#c8dce8');
+    plaza.material.color.set('#e2edf3');
+    bombilla.color.set('#fff8db');
+    luzFarol.color.set('#ffea88');
+
+    // Copete de nieve en la cima de cada pino
+    for (const arb of arboles) {
+      const nievePino = malla(new THREE.ConeGeometry(0.7, 0.65, 6), '#ffffff', 0, 3.6, 0);
+      arb.add(nievePino);
+      decoracionesArboles.push(nievePino);
+    }
+
+    // Guirnalda festiva y lazo rojo en el farol principal
+    const lazoFarol = new THREE.Mesh(new THREE.TorusGeometry(0.25, 0.08, 6, 10), mat('#d32f2f'));
+    lazoFarol.position.set(-3.6, 2.3, 2.6);
+    grupoEstacional.add(lazoFarol);
+  }
+
+  // Decorar todas las salas existentes
+  for (const s of salas.values()) decorarSalaEstacional(s);
+
+  // Escenario Central Especial ("El Mero Día")
+  if (cfg.esMeroDia) {
+    if (evId === 'halloween') grupoEstacional.add(crearEscenarioHalloweenMeroDia());
+    else if (evId === 'diademuertos') grupoEstacional.add(crearEscenarioDiaDeMuertosMeroDia());
+    else if (evId === 'navidad') grupoEstacional.add(crearEscenarioNavidadMeroDia());
+  }
+
+  // Actualizar Botón de Festividad en la UI
+  const botonEvento = document.getElementById('boton-evento');
+  if (botonEvento) {
+    botonEvento.innerHTML = `<span>${cfg.icono}</span> <span>${cfg.nombre}${cfg.esMeroDia ? ' (¡Mero Día!)' : ''}</span>`;
+  }
+  const modoTextoEl = document.getElementById('evento-modo-actual');
+  if (modoTextoEl) {
+    modoTextoEl.textContent = `Activo: ${cfg.titulo} (${eleccionManual === 'auto' || !eleccionManual ? 'Automático' : 'Manual'})`;
+  }
+}
+
+// Bucle de animación estacional
+function animarEventoEstacional(t, dt) {
+  for (const fn of animadoresEstacionales) {
+    try { fn(t, dt); } catch (e) {}
+  }
+}
+
+// Modal y Selector de Festividades
+const eventoOverlay = document.getElementById('evento-overlay');
+const eventoGrid = document.getElementById('evento-grid');
+let modalEventoAbierto = false;
+
+function poblarOpcionesEvento() {
+  if (!eventoGrid) return;
+  eventoGrid.innerHTML = '';
+  const actual = modoEventoSeleccionado || 'auto';
+
+  for (const op of OPCIONES_EVENTOS) {
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = `evento-card ${actual === op.id ? 'activa' : ''}`;
+    card.innerHTML = `
+      <div class="evento-card-icono">${op.icono}</div>
+      <div class="evento-card-info">
+        <div class="evento-card-titulo">
+          <span>${op.titulo}</span>
+          <span class="evento-card-tag ${op.especial ? 'especial' : ''}">${op.tag}</span>
+        </div>
+        <div class="evento-card-desc">${op.desc}</div>
+      </div>
+    `;
+    card.addEventListener('click', () => {
+      modoEventoSeleccionado = op.id === 'auto' ? null : op.id;
+      aplicarEventoEstacional(modoEventoSeleccionado);
+      cerrarModalEvento();
+    });
+    eventoGrid.appendChild(card);
+  }
+}
+
+function abrirModalEvento() {
+  if (!eventoOverlay) return;
+  poblarOpcionesEvento();
+  eventoOverlay.classList.add('abierta');
+  modalEventoAbierto = true;
+}
+
+function cerrarModalEvento() {
+  if (!eventoOverlay) return;
+  eventoOverlay.classList.remove('abierta');
+  modalEventoAbierto = false;
+}
+
+function toggleModalEvento() {
+  if (modalEventoAbierto) cerrarModalEvento();
+  else abrirModalEvento();
+}
+
+if (eventoOverlay) {
+  eventoOverlay.addEventListener('click', (e) => {
+    if (e.target === eventoOverlay) cerrarModalEvento();
+  });
+}
+// Comandos para abrir el menú de festividades:
+// 1. En el chat con el comando /eventos o /menu
+// 2. En la consola con window.eventos() o eventos()
+// 3. En la URL con ?menu=1 o ?eventos=1
+window.eventos = () => abrirModalEvento();
+window.festividades = () => abrirModalEvento();
+if (new URLSearchParams(location.search).has('menu') || new URLSearchParams(location.search).has('eventos')) {
+  setTimeout(abrirModalEvento, 400);
+}
+
+// Inicializar festividades
+aplicarEventoEstacional();
+
 // ---------- vistas: isometrica, tercera y primera persona ----------
 const MODOS = ['iso', 'tercera', 'primera'];
 const NOMBRE_MODO = { iso: 'Isométrica', tercera: 'Tercera persona', primera: 'Primera persona' };
@@ -1631,6 +2585,13 @@ botonModo.addEventListener('click', () => {
 
 addEventListener('keydown', (e) => {
   if (e.target.closest && e.target.closest('input, select, textarea')) return;
+  if (modalEventoAbierto) {
+    if (e.code === 'Escape') {
+      e.preventDefault();
+      cerrarModalEvento();
+      return;
+    }
+  }
   if (e.code === 'KeyG' && !e.repeat) {
     e.preventDefault();
     toggleRuleta();
@@ -1880,6 +2841,7 @@ function cuadro() {
   globos();
   ubicarVisitantes();
   for (const p of personas.values()) animarPersona(p, t, dt);
+  animarEventoEstacional(t, dt);
 
   const gestoYo = actualizarGesto(yo, t, dt);
 

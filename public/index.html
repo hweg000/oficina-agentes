@@ -174,6 +174,39 @@
   #panel.plegado { bottom: auto; }
   #panel.plegado #lista, #panel.plegado #detalle { display: none; }
 
+
+  /* Modal de Eventos / Festividades */
+  #evento-overlay { position: fixed; inset: 0; z-index: 100; display: none; align-items: center; justify-content: center; background: rgba(18, 24, 32, 0.55); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+  #evento-overlay.abierta { display: flex; animation: aparecerEvento 0.2s ease-out; }
+  @keyframes aparecerEvento { from { opacity: 0; } to { opacity: 1; } }
+
+  .evento-panel { position: relative; width: min(620px, calc(100vw - 32px)); max-height: 85vh; background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(14px); border-radius: 24px; box-shadow: var(--sombra); display: flex; flex-direction: column; overflow: hidden; padding: 22px 24px; box-sizing: border-box; }
+  .evento-header { text-align: center; margin-bottom: 16px; }
+  .evento-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 999px; font-size: 11px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; background: #ffe8cc; color: #d9480f; border: 1px solid #ffd8a8; box-shadow: var(--sombra); }
+  .evento-header h2 { margin: 8px 0 4px; font-size: 22px; font-weight: 800; color: var(--texto); }
+  .evento-header p { margin: 0; font-size: 13px; color: var(--suave); }
+
+  .evento-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; overflow-y: auto; max-height: 52vh; padding: 4px 2px 10px; }
+  .evento-card { display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px; border-radius: 16px; border: 2px solid var(--linea); background: rgba(255, 255, 255, 0.7); cursor: pointer; transition: all 0.15s ease; text-align: left; font: inherit; }
+  .evento-card:hover { border-color: var(--acento); background: #ffffff; transform: translateY(-2px); box-shadow: var(--sombra); }
+  .evento-card.activa { border-color: var(--acento); background: #ffffff; box-shadow: 0 0 0 2px var(--acento), var(--sombra); }
+  .evento-card-icono { font-size: 26px; line-height: 1; flex: none; margin-top: 2px; }
+  .evento-card-info { flex: 1; min-width: 0; }
+  .evento-card-titulo { font-weight: 800; font-size: 14px; color: var(--texto); margin-bottom: 2px; display: flex; align-items: center; gap: 6px; }
+  .evento-card-tag { font-size: 10px; font-weight: 800; padding: 1px 7px; border-radius: 999px; background: #ffe8cc; color: #d9480f; }
+  .evento-card-tag.especial { background: #e0edff; color: #2563eb; }
+  .evento-card-desc { font-size: 11px; color: var(--suave); line-height: 1.35; }
+
+  .evento-ayuda { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--linea); font-size: 12px; font-weight: 700; color: var(--suave); display: flex; justify-content: space-between; align-items: center; }
+  .evento-ayuda kbd { padding: 2px 7px; border-radius: 6px; background: rgba(43, 52, 64, 0.1); color: var(--texto); font-family: inherit; font-size: 11px; }
+
+  /* Banners flotantes 3D en la plaza */
+  .cartel-festivo { font-family: 'Nunito', system-ui, sans-serif; font-weight: 800; font-size: 14px; padding: 6px 16px; border-radius: 999px; box-shadow: var(--sombra); white-space: nowrap; pointer-events: none; animation: flotarCartel 3s ease-in-out infinite; }
+  .cartel-festivo.halloween { background: #2a1538; color: #ff9d42; border: 2px solid #ff7a29; }
+  .cartel-festivo.diademuertos { background: #2b1126; color: #ffa726; border: 2px solid #ff007f; }
+  .cartel-festivo.navidad { background: #0f2c1d; color: #ffffff; border: 2px solid #e63946; }
+  @keyframes flotarCartel { 0%, 100% { translate: 0 0; } 50% { translate: 0 -6px; } }
+
   @media (max-width: 700px) {
     #panel { top: auto; left: 16px; right: 16px; width: auto; max-height: 45vh; }
     #titulo { display: none; }
@@ -224,6 +257,22 @@
       <div class="ruleta-ayuda">
         <span><kbd>G</kbd> o <kbd>Esc</kbd> Cerrar</span>
         <span><kbd>1</kbd> - <kbd>6</kbd> Selección rápida</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de Selección de Festividades -->
+  <div id="evento-overlay" role="dialog" aria-label="Festividades del año">
+    <div class="evento-panel">
+      <div class="evento-header">
+        <span class="evento-badge">✨ Calendario Festivo</span>
+        <h2>Eventos y Festividades</h2>
+        <p>Decora la oficina según las fechas del calendario o prueba escenarios temáticos especiales.</p>
+      </div>
+      <div class="evento-grid" id="evento-grid"></div>
+      <div class="evento-ayuda">
+        <span><kbd>F</kbd> o <kbd>Esc</kbd> Cerrar</span>
+        <span id="evento-modo-actual">Modo: Automático</span>
       </div>
     </div>
   </div>
